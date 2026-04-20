@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MediaPipe Hand Visualizer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <h1>MediaPipe Hand Visualizer</h1>
+    <p class="subtitle">Start your webcam to see hand landmarks and connections.</p>
+
+    <section class="controls">
+      <button id="startBtn" type="button">Start camera</button>
+      <button id="stopBtn" type="button" disabled>Stop camera</button>
+      <span id="status" role="status">Idle</span>
+    </section>
+
+    <section class="viewer">
+      <video id="video" playsinline></video>
+      <canvas id="overlay"></canvas>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="main.js"></script>
+</body>
+</html>
