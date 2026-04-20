@@ -74,6 +74,16 @@ button:disabled {
   font-weight: 600;
 }
 
+.gesture-output {
+  margin-left: auto;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid #d7dde6;
+  border-radius: 999px;
+  background: #f7f9fc;
+  font-weight: 700;
+  color: #203448;
+}
+
 .viewer {
   position: relative;
   border-radius: 12px;
