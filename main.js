@@ -16,9 +16,14 @@ const GESTURE = {
 };
 
 const STABLE_FRAMES_REQUIRED = 4;
+const PISTOL_STABLE_FRAMES_REQUIRED = 2;
+const PISTOL_ENTER_SCORE = 0.62;
+const PISTOL_HOLD_SCORE = 0.5;
+const GESTURE_LOST_GRACE_FRAMES = 6;
 let pendingGesture = GESTURE.NONE;
 let pendingGestureFrames = 0;
 let stableGesture = GESTURE.NONE;
+let lostGestureFrames = 0;
 
 function updateStatus(message) {
   statusElement.textContent = message;
@@ -115,6 +120,7 @@ function isIndexPointingForward(landmarks) {
 
 function getPistolScore(landmarks, states) {
   const palmSize = Math.max(getPalmSize(landmarks), 1e-6);
+  const palmCenter = getPalmCenter(landmarks);
   const indexForward = isIndexPointingForward(landmarks);
   const indexActive = states.indexExtended || indexForward;
   const foldedCount = [states.middleFolded, states.ringFolded, states.pinkyFolded].filter(Boolean).length;
@@ -129,6 +135,12 @@ function getPistolScore(landmarks, states) {
     distance3D(landmarks[20], landmarks[0])
   );
   const indexDominant = indexTipToWrist > otherTipMax * 1.05;
+  const otherTipDistancesToPalm = [
+    distance3D(landmarks[12], palmCenter),
+    distance3D(landmarks[16], palmCenter),
+    distance3D(landmarks[20], palmCenter)
+  ];
+  const otherTipsCompact = (otherTipDistancesToPalm[0] + otherTipDistancesToPalm[1] + otherTipDistancesToPalm[2]) / 3 < palmSize * 0.95;
 
   let score = 0;
   if (indexActive) score += 0.45;
@@ -136,11 +148,13 @@ function getPistolScore(landmarks, states) {
   if (foldedCount >= 2) score += 0.2;
   if (thumbUsable) score += 0.1;
   if (indexDominant) score += 0.1;
+  if (otherTipsCompact) score += 0.08;
 
   return {
     score,
     indexForward,
-    foldedCount
+    foldedCount,
+    otherTipsCompact
   };
 }
 
@@ -167,8 +181,15 @@ function detectGesture(landmarks) {
     pinkyFolded
   };
   const pistol = getPistolScore(landmarks, states);
+  const isCurrentlyPistol = stableGesture === GESTURE.PISTOL || pendingGesture === GESTURE.PISTOL;
+  const scoreThreshold = isCurrentlyPistol ? PISTOL_HOLD_SCORE : PISTOL_ENTER_SCORE;
+  const foldedOrCompact = pistol.foldedCount >= 2 || pistol.otherTipsCompact;
 
-  if (pistol.score >= 0.65 && pistol.foldedCount >= 2) {
+  if (pistol.indexForward && pistol.score >= 0.52 && (pistol.foldedCount >= 1 || pistol.otherTipsCompact)) {
+    return GESTURE.PISTOL;
+  }
+
+  if (pistol.score >= scoreThreshold && foldedOrCompact) {
     return GESTURE.PISTOL;
   }
 
@@ -176,6 +197,15 @@ function detectGesture(landmarks) {
 }
 
 function smoothGesture(rawGesture, payload) {
+  if (rawGesture === GESTURE.NONE && stableGesture === GESTURE.PISTOL && lostGestureFrames < GESTURE_LOST_GRACE_FRAMES) {
+    lostGestureFrames += 1;
+    return stableGesture;
+  }
+
+  if (rawGesture !== GESTURE.NONE) {
+    lostGestureFrames = 0;
+  }
+
   if (rawGesture === pendingGesture) {
     pendingGestureFrames += 1;
   } else {
@@ -183,7 +213,8 @@ function smoothGesture(rawGesture, payload) {
     pendingGestureFrames = 1;
   }
 
-  if (pendingGestureFrames >= STABLE_FRAMES_REQUIRED && stableGesture !== rawGesture) {
+  const requiredFrames = rawGesture === GESTURE.PISTOL ? PISTOL_STABLE_FRAMES_REQUIRED : STABLE_FRAMES_REQUIRED;
+  if (pendingGestureFrames >= requiredFrames && stableGesture !== rawGesture) {
     stableGesture = rawGesture;
     window.dispatchEvent(new CustomEvent("gesturechange", { detail: payload }));
   }
@@ -278,6 +309,7 @@ function stopCamera() {
   pendingGesture = GESTURE.NONE;
   pendingGestureFrames = 0;
   stableGesture = GESTURE.NONE;
+  lostGestureFrames = 0;
   updateGestureOutput(GESTURE.NONE);
   startBtn.disabled = false;
   stopBtn.disabled = true;
