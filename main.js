@@ -30,11 +30,11 @@ const LANG = {
   fr: {
     spells: {
       shield: ['bouclier', 'protection', 'barriere'],
-      fire: ['brulure', 'feu', 'flamme', 'bruler'],
-      lightning: ['eclair', 'foudre', 'tonnerre'],
+      fire: ['flamme', 'feu', 'brulure', 'bruler', 'incendie'],
+      lightning: ['eclair', 'foudre', 'tonnerre', 'eclair'],
       poison: ['poison', 'toxique', 'venin'],
-      heal: ['soin', 'guerir', 'sante'],
-      freeze: ['gel', 'geler', 'glace', 'froid'],
+      heal: ['soin', 'guerir', 'sante', 'soigner'],
+      freeze: ['gel', 'geler', 'glace', 'froid', 'congeler'],
     },
     ui: {
       shield: 'BOUCLIER',
@@ -1007,13 +1007,20 @@ function castFire() {
   if (!isReady('fire') || !indexTip) return;
   stopPoison();
   const pos = n2c(indexTip.x, indexTip.y);
-  let hit = false;
+  // Radius scales with combo: 80px base → +20px per combo level
+  const fireRad = 80 + combo * 20;
+  let hitCount = 0;
   for (const tgt of targets) {
-    if (Math.hypot(tgt.x - pos.x, tgt.y - pos.y) < tgt.r + 60) {
-      triggerCD('fire');
+    if (Math.hypot(tgt.x - pos.x, tgt.y - pos.y) < tgt.r + fireRad) {
       tgt.burning = true;
       tgt.burnDps = 5 * combo;
       tgt.burnTimer = 3 + combo * 0.5;
+      // Fire melts ice — remove freeze
+      if (tgt.frozen) {
+        tgt.frozen = false;
+        tgt.freezeTimer = 0;
+        tgt.freezeDmgBonus = 0;
+      }
       spellFX.push({
         type: 'fire',
         x: pos.x,
@@ -1023,15 +1030,19 @@ function castFire() {
         life: 0.8,
         maxLife: 0.8,
       });
-      spawnFireParts(pos.x, pos.y);
-      flash('🔥 ' + t('fire'), '#ff6b2b');
-      markActive('fire');
-      sndFire();
-      hit = true;
-      break;
+      hitCount++;
     }
   }
-  if (!hit) {
+  if (hitCount > 0) {
+    triggerCD('fire');
+    spawnFireParts(pos.x, pos.y);
+    flash(
+      '🔥 ' + t('fire') + (hitCount > 1 ? ' (×' + hitCount + ')' : ''),
+      '#ff6b2b',
+    );
+    markActive('fire');
+    sndFire();
+  } else {
     spellFX.push({
       type: 'fire_miss',
       x: pos.x,
@@ -1896,11 +1907,17 @@ function initSpeech() {
     document.getElementById('micDot').classList.add('active');
     for (let i = e.resultIndex; i < e.results.length; i++)
       for (let a = 0; a < e.results[i].length; a++) {
-        const tx = e.results[i][a].transcript.trim().toLowerCase();
-        // Build flat list of {key, word} sorted by word length desc
+        // Normalize: lowercase + strip accents so "éclair"=="eclair", "brûlure"=="brulure"
+        const norm = (s) =>
+          s
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+        const tx = norm(e.results[i][a].transcript.trim());
+        // Build flat list sorted by word length desc (longer words matched first)
         const spellEntries = [];
         for (const [k, words] of Object.entries(LANG[currentLang].spells))
-          for (const w of words) spellEntries.push({ k, w });
+          for (const w of words) spellEntries.push({ k, w: norm(w) });
         spellEntries.sort((a, b) => b.w.length - a.w.length);
         for (const { k, w } of spellEntries) {
           if (tx.includes(w)) {
@@ -2157,6 +2174,7 @@ function hideRules() {
 /* ── Lang ─────────────────────────────────────────────────────── */
 function selectLang(lang) {
   currentLang = lang;
+  localStorage.setItem('ss_lang', lang);
   document
     .querySelectorAll('.lang-btn')
     .forEach((b) => b.classList.toggle('selected', b.dataset.lang === lang));
@@ -2298,5 +2316,26 @@ function announceWave(silent) {
 }
 
 /* ── INIT ─────────────────────────────────────────────────────── */
+// Restore persisted preferences
+(function () {
+  const savedLang = localStorage.getItem('ss_lang');
+  if (savedLang === 'fr' || savedLang === 'en') {
+    currentLang = savedLang;
+  }
+  const savedBg = localStorage.getItem('ss_bg');
+  if (savedBg === 'camera' || savedBg === 'virtual') {
+    bgMode = savedBg;
+  }
+})();
 showScreen('title');
 updateRulesText();
+// Reflect restored state in UI
+document
+  .querySelectorAll('.lang-btn')
+  .forEach((b) =>
+    b.classList.toggle('selected', b.dataset.lang === currentLang),
+  );
+document
+  .querySelectorAll('.bg-btn')
+  .forEach((b) => b.classList.toggle('selected', b.dataset.bg === bgMode));
+handCanvas.style.display = 'block';
