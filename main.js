@@ -149,6 +149,7 @@ const CD = {
   poison: 6000,
   heal: 5000,
   freeze: 8000,
+  blackhole: 10000,
 };
 const cdTimer = {
   shield: 0,
@@ -157,6 +158,7 @@ const cdTimer = {
   poison: 0,
   heal: 0,
   freeze: 0,
+  blackhole: 0,
 };
 function isReady(s) {
   return Date.now() >= cdTimer[s] && !isBlocked(s);
@@ -290,7 +292,7 @@ function idxPoint(lm) {
     ang3(pip, dip, tip) > 135 &&
     Math.hypot(tip.x - mcp.x, tip.y - mcp.y) > psz * 0.35 &&
     Math.hypot(tip.x - lm[0].x, tip.y - lm[0].y) >
-      Math.hypot(pip.x - lm[0].x, pip.y - lm[0].y) * 1.05
+    Math.hypot(pip.x - lm[0].x, pip.y - lm[0].y) * 1.05
   );
 }
 function detectGesture(lm) {
@@ -760,7 +762,7 @@ function stopMusic() {
   _musicNodes.forEach((n) => {
     try {
       n.stop ? n.stop() : n.disconnect();
-    } catch (e) {}
+    } catch (e) { }
   });
   _musicNodes = [];
 }
@@ -948,7 +950,7 @@ function updateTargets(dt) {
         spawnFX(tgt.x, tgt.y, '#ffe066', 30);
         flash(
           '💣 BOOM ! ' +
-            (currentLang === 'fr' ? 'Dégâts explosion!' : 'Bomb exploded!'),
+          (currentLang === 'fr' ? 'Dégâts explosion!' : 'Bomb exploded!'),
           '#f97316',
         );
         sndDamage();
@@ -992,9 +994,9 @@ function updateTargets(dt) {
         }
         flash(
           '⚡ ' +
-            (currentLang === 'fr'
-              ? 'Projectiles accélérés!'
-              : 'Projectiles sped up!'),
+          (currentLang === 'fr'
+            ? 'Projectiles accélérés!'
+            : 'Projectiles sped up!'),
           '#38bdf8',
         );
       }
@@ -1312,8 +1314,8 @@ function castFreeze() {
   }
   flash(
     '❄️ ' +
-      t('freeze') +
-      (frozeCount ? ' (' + frozeCount + ')' : ' — no targets'),
+    t('freeze') +
+    (frozeCount ? ' (' + frozeCount + ')' : ' — no targets'),
     '#a5f3fc',
   );
   markActive('freeze');
@@ -1377,7 +1379,7 @@ function updateSpellFX(dt) {
       fx.r = (1 - fx.life / fx.maxLife) * fx.maxR;
     if (fx.type === 'blackhole') {
       const pullStr = 0.8 + level * 0.15; // attraction force
-      const dmgPerSec = 5 + 5 * level;
+      const dmgPerSec = 0.5 + 3 * level;
       fx.dmgAcc = (fx.dmgAcc || 0) + dmgPerSec * dt;
       for (const tgt of targets) {
         const dx = fx.x - tgt.x,
@@ -1677,9 +1679,9 @@ function announceBoss(immunity) {
     () =>
       flash(
         '🛡 BOSS immune to ' +
-          (icons[immunity] || '') +
-          ' ' +
-          (immunity || '').toUpperCase(),
+        (icons[immunity] || '') +
+        ' ' +
+        (immunity || '').toUpperCase(),
         '#f97316',
       ),
     1600,
@@ -2476,7 +2478,7 @@ function initSpeech() {
   if (recognition) {
     try {
       recognition.stop();
-    } catch (e) {}
+    } catch (e) { }
   }
   recognition = new SR();
   recognition.continuous = true;
@@ -2562,7 +2564,7 @@ function initSpeech() {
       setTimeout(() => {
         try {
           recognition.start();
-        } catch (e) {}
+        } catch (e) { }
       }, 300);
     else {
       speechStatus = 'granted';
@@ -2606,7 +2608,7 @@ function stopSpeech() {
   if (!recognition) return;
   try {
     recognition.stop();
-  } catch (e) {}
+  } catch (e) { }
   speechStatus = 'idle';
   updateMicUI();
 }
