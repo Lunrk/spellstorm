@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   SPELL STORM — main.js  (clean rewrite)
+   SPELL STORM — main.js
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── LANGUAGE ─────────────────────────────────────────────────── */
@@ -31,7 +31,7 @@ const LANG = {
     spells: {
       shield: ['bouclier', 'protection', 'barriere'],
       fire: ['flamme', 'feu', 'brulure', 'bruler', 'incendie'],
-      lightning: ['eclair', 'foudre', 'tonnerre', 'eclair'],
+      lightning: ['eclair', 'foudre', 'tonnerre'],
       poison: ['poison', 'toxique', 'venin'],
       heal: ['soin', 'guerir', 'sante', 'soigner'],
       freeze: ['gel', 'geler', 'glace', 'froid', 'congeler'],
@@ -61,7 +61,7 @@ function tSpell(k) {
 }
 
 /* ── BG MODE ──────────────────────────────────────────────────── */
-let bgMode = 'virtual'; // 'virtual' | 'camera'
+let bgMode = 'virtual';
 
 /* ── CANVAS ───────────────────────────────────────────────────── */
 const gameCanvas = document.getElementById('gameCanvas');
@@ -88,30 +88,23 @@ let hp = 100,
 let wave = 1,
   waveTimer = 0;
 let bestScore = parseInt(localStorage.getItem('spellstorm_best') || '0');
-let bestCombo = 1,
-  raf = null;
+let raf = null;
 
-/* ── LEVEL ─────────────────────────────────────────────────────── */
-// combo = level. Kills to next level: level*4+2  (L1=6, L2=10, L3=14, L4=18...)
-let combo = 1,
-  comboKills = 0;
-function killsForLevel(lvl) {
-  return lvl * 4 + 2;
-}
+/* ── LEVEL ────────────────────────────────────────────────────── */
+let level = 1,
+  levelKills = 0;
+const killsToLevel = (lvl) => 2 + lvl * 3 + Math.floor(lvl * lvl * 0.5);
+
 function addKill() {
   kills++;
-  comboKills++;
-  if (comboKills >= killsForLevel(combo)) {
-    combo++;
-    comboKills = 0;
-    if (combo > bestCombo) bestCombo = combo;
-    hp = 100; // full heal on level-up
-    showComboUp();
+  levelKills++;
+  if (levelKills >= killsToLevel(level)) {
+    level++;
+    levelKills = 0;
+    hp = 100; // FIX 1: full heal on level-up
+    showLevelUp(); // FIX 1: was a TODO
   }
-  score += 100 * combo;
-}
-function breakCombo() {
-  /* levels never reset */
+  score += Math.floor(10 * wave * (1 + level * 0.1));
 }
 
 /* ── ENTITIES ─────────────────────────────────────────────────── */
@@ -156,12 +149,8 @@ let indexTip = null,
   indexDir = null,
   palmCenter = null,
   palmRadius = 0;
-
-// Poison is purely timer-based, independent of gesture
 let poisonActive = false,
   _poisonTimeout = null;
-
-// Smoothing
 let _pGesture = 'NONE',
   _pFrames = 0,
   _sGesture = 'NONE',
@@ -287,13 +276,12 @@ function smoothGesture(raw) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   AUDIO ENGINE — Web Audio API synthesis
+   AUDIO ENGINE
    ═══════════════════════════════════════════════════════════════ */
-
-let _ac = null; // AudioContext — created on first user interaction
-let _masterGain = null;
-let _musicNodes = []; // refs for music loop cleanup
-let _musicPlaying = false;
+let _ac = null,
+  _masterGain = null,
+  _musicNodes = [],
+  _musicPlaying = false;
 
 function getAC() {
   if (!_ac) {
@@ -305,15 +293,11 @@ function getAC() {
   if (_ac.state === 'suspended') _ac.resume();
   return _ac;
 }
-
-/* ── Helper: connect chain of nodes → masterGain ──────────────── */
 function chain(...nodes) {
   for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
   nodes[nodes.length - 1].connect(_masterGain);
   return nodes[0];
 }
-
-/* ── White / pink noise buffer ────────────────────────────────── */
 function makeNoise(ac, dur, color = 'white') {
   const sr = ac.sampleRate,
     len = Math.ceil(sr * dur);
@@ -341,13 +325,9 @@ function makeNoise(ac, dur, color = 'white') {
   }
   return buf;
 }
-
-/* ── SPELL SOUNDS ──────────────────────────────────────────────── */
-
 function sndShield() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Resonant dome sweep — high shimmer + low thud
   const osc1 = ac.createOscillator();
   osc1.type = 'sine';
   osc1.frequency.setValueAtTime(320, now);
@@ -363,7 +343,6 @@ function sndShield() {
   const g2 = ac.createGain();
   g2.gain.setValueAtTime(0.5, now);
   g2.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-  // Shimmer noise layer
   const ns = ac.createBufferSource();
   ns.buffer = makeNoise(ac, 0.3);
   const nsf = ac.createBiquadFilter();
@@ -383,11 +362,9 @@ function sndShield() {
   ns.start(now);
   ns.stop(now + 0.3);
 }
-
 function sndFire() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Whoosh ignition — pitched noise + crackle
   const ns = ac.createBufferSource();
   ns.buffer = makeNoise(ac, 0.6, 'pink');
   const f1 = ac.createBiquadFilter();
@@ -398,7 +375,6 @@ function sndFire() {
   const g1 = ac.createGain();
   g1.gain.setValueAtTime(0.6, now);
   g1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-  // Crackle layer
   const ns2 = ac.createBufferSource();
   ns2.buffer = makeNoise(ac, 0.3);
   const f2 = ac.createBiquadFilter();
@@ -407,7 +383,6 @@ function sndFire() {
   const g2 = ac.createGain();
   g2.gain.setValueAtTime(0.2, now);
   g2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-  // Low roar
   const osc = ac.createOscillator();
   osc.type = 'sawtooth';
   osc.frequency.setValueAtTime(55, now);
@@ -425,11 +400,9 @@ function sndFire() {
   osc.start(now);
   osc.stop(now + 0.5);
 }
-
 function sndLightning() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Sharp crack + electric buzz
   const ns = ac.createBufferSource();
   ns.buffer = makeNoise(ac, 0.05);
   const f1 = ac.createBiquadFilter();
@@ -438,7 +411,6 @@ function sndLightning() {
   const g1 = ac.createGain();
   g1.gain.setValueAtTime(1.0, now);
   g1.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-  // Electric buzz
   const osc = ac.createOscillator();
   osc.type = 'square';
   osc.frequency.setValueAtTime(180, now);
@@ -446,7 +418,6 @@ function sndLightning() {
   const g2 = ac.createGain();
   g2.gain.setValueAtTime(0.3, now);
   g2.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-  // High zap
   const osc2 = ac.createOscillator();
   osc2.type = 'sawtooth';
   osc2.frequency.setValueAtTime(1200, now);
@@ -464,11 +435,9 @@ function sndLightning() {
   osc2.start(now);
   osc2.stop(now + 0.2);
 }
-
 function sndPoison() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Bubbling / hissing toxic
   const osc = ac.createOscillator();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(220, now);
@@ -494,11 +463,9 @@ function sndPoison() {
   ns.start(now);
   ns.stop(now + 0.5);
 }
-
 function sndFreeze() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Ice nova — descending shimmer + glassy crack
   for (let i = 0; i < 5; i++) {
     const osc = ac.createOscillator();
     osc.type = 'sine';
@@ -515,7 +482,6 @@ function sndFreeze() {
     osc.start(now + i * 0.02);
     osc.stop(now + 0.6 + i * 0.02);
   }
-  // Ice crack noise burst
   const ns = ac.createBufferSource();
   ns.buffer = makeNoise(ac, 0.12);
   const f1 = ac.createBiquadFilter();
@@ -528,13 +494,10 @@ function sndFreeze() {
   ns.start(now);
   ns.stop(now + 0.12);
 }
-
 function sndHeal() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Warm rising chime
-  const freqs = [261, 329, 392, 523];
-  freqs.forEach((f, i) => {
+  [261, 329, 392, 523].forEach((f, i) => {
     const osc = ac.createOscillator();
     osc.type = 'sine';
     osc.frequency.value = f;
@@ -547,7 +510,6 @@ function sndHeal() {
     osc.stop(now + i * 0.07 + 0.4);
   });
 }
-
 function sndProjectileDestroy() {
   const ac = getAC(),
     now = ac.currentTime;
@@ -562,7 +524,6 @@ function sndProjectileDestroy() {
   osc.start(now);
   osc.stop(now + 0.15);
 }
-
 function sndTargetDeath() {
   const ac = getAC(),
     now = ac.currentTime;
@@ -579,11 +540,9 @@ function sndTargetDeath() {
   ns.start(now);
   ns.stop(now + 0.2);
 }
-
 function sndDamage() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Harsh impact
   const ns = ac.createBufferSource();
   ns.buffer = makeNoise(ac, 0.1);
   const f1 = ac.createBiquadFilter();
@@ -605,13 +564,10 @@ function sndDamage() {
   osc.start(now);
   osc.stop(now + 0.2);
 }
-
-function sndComboUp() {
+function sndLevelUp() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Ascending sparkle
-  const freqs = [523, 659, 784, 1047];
-  freqs.forEach((f, i) => {
+  [523, 659, 784, 1047].forEach((f, i) => {
     const osc = ac.createOscillator();
     osc.type = 'triangle';
     osc.frequency.value = f;
@@ -623,11 +579,9 @@ function sndComboUp() {
     osc.stop(now + i * 0.05 + 0.2);
   });
 }
-
 function sndWave() {
   const ac = getAC(),
     now = ac.currentTime;
-  // Low dramatic boom
   const osc = ac.createOscillator();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(80, now);
@@ -652,29 +606,21 @@ function sndWave() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   AMBIENT MUSIC — dark neon loop
-   Built from layered drones + arpeggiated melody
+   AMBIENT MUSIC
    ═══════════════════════════════════════════════════════════════ */
-
 function startMusic() {
   if (_musicPlaying) return;
   _musicPlaying = true;
   const ac = getAC();
   _musicNodes = [];
-
-  // Master music gain (lower than sfx)
   const musicGain = ac.createGain();
   musicGain.gain.value = 0.22;
   musicGain.connect(_masterGain);
   _musicNodes.push(musicGain);
-
-  // ── Low drone pad ──────────────────────────────────────────────
-  const droneFreqs = [55, 82.4, 110]; // A1, E2, A2
-  droneFreqs.forEach((f, i) => {
+  [55, 82.4, 110].forEach((f, i) => {
     const osc = ac.createOscillator();
     osc.type = i === 0 ? 'sine' : 'triangle';
     osc.frequency.value = f;
-    // Slow vibrato
     const lfo = ac.createOscillator();
     lfo.type = 'sine';
     lfo.frequency.value = 0.3 + i * 0.07;
@@ -690,15 +636,12 @@ function startMusic() {
     lfo.start();
     _musicNodes.push(osc, lfo, lfoGain, g);
   });
-
-  // ── Mid shimmer pad ────────────────────────────────────────────
   [220, 277.2, 329.6, 440].forEach((f, i) => {
     const osc = ac.createOscillator();
     osc.type = 'sine';
-    osc.frequency.value = f + (Math.random() - 0.5) * 2; // slight detune
+    osc.frequency.value = f + (Math.random() - 0.5) * 2;
     const g = ac.createGain();
     g.gain.value = 0.04;
-    // Slow tremolo
     const lfo = ac.createOscillator();
     lfo.type = 'sine';
     lfo.frequency.value = 0.15 + i * 0.04;
@@ -712,21 +655,15 @@ function startMusic() {
     lfo.start();
     _musicNodes.push(osc, lfo, lfoG, g);
   });
-
-  // ── Arpeggio melody ────────────────────────────────────────────
-  // A minor pentatonic: A3 C4 D4 E4 G4 A4
   const arpNotes = [
     220, 261.6, 293.7, 329.6, 392, 440, 392, 329.6, 293.7, 261.6,
   ];
-  const arpSpeed = 0.35; // seconds per note
+  const arpSpeed = 0.35;
   let arpStep = 0;
-
   function scheduleArp() {
     if (!_musicPlaying) return;
-    const now = ac.currentTime;
-    const freq = arpNotes[arpStep % arpNotes.length];
-    arpStep++;
-
+    const now = ac.currentTime,
+      freq = arpNotes[arpStep++ % arpNotes.length];
     const osc = ac.createOscillator();
     osc.type = 'triangle';
     osc.frequency.value = freq;
@@ -738,12 +675,9 @@ function startMusic() {
     g.connect(musicGain);
     osc.start(now);
     osc.stop(now + arpSpeed);
-
     setTimeout(scheduleArp, arpSpeed * 1000 * 0.98);
   }
   scheduleArp();
-
-  // ── Sub bass pulse ─────────────────────────────────────────────
   function scheduleBass() {
     if (!_musicPlaying) return;
     const now = ac.currentTime;
@@ -761,7 +695,6 @@ function startMusic() {
   }
   scheduleBass();
 }
-
 function stopMusic() {
   _musicPlaying = false;
   _musicNodes.forEach((n) => {
@@ -859,8 +792,8 @@ function updateTargets(dt) {
     }
     if (tgt.burning) {
       tgt.burnTimer -= dt;
-      const dmgMult = 1 + (tgt.freezeDmgBonus || 0);
-      tgt.hp -= tgt.burnDps * dmgMult * dt;
+      const dm = 1 + (tgt.freezeDmgBonus || 0);
+      tgt.hp -= tgt.burnDps * dm * dt;
       if (tgt.burnTimer <= 0) tgt.burning = false;
     }
     if (tgt.poisoned) {
@@ -964,7 +897,6 @@ function updateDrops(dt) {
 function n2c(nx, ny) {
   return { x: (1 - nx) * gameCanvas.width, y: ny * gameCanvas.height };
 }
-
 function stopPoison() {
   poisonActive = false;
   if (_poisonTimeout) {
@@ -981,7 +913,6 @@ function castShield() {
     rad = palmRadius * 2.2;
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
-    // Only destroy orange/red projectiles (age >= 25% of lifetime)
     if (
       proj.age / proj.maxLife >= 0.25 &&
       Math.hypot(proj.x - pos.x, proj.y - pos.y) < rad
@@ -1009,15 +940,13 @@ function castFire() {
   if (!isReady('fire') || !indexTip) return;
   stopPoison();
   const pos = n2c(indexTip.x, indexTip.y);
-  // Radius scales with combo: 80px base → +20px per combo level
-  const fireRad = 80 + combo * 20;
+  const fireRad = 80 + level * 20;
   let hitCount = 0;
   for (const tgt of targets) {
     if (Math.hypot(tgt.x - pos.x, tgt.y - pos.y) < tgt.r + fireRad) {
       tgt.burning = true;
-      tgt.burnDps = 5 * combo;
-      tgt.burnTimer = 3 + combo * 0.5;
-      // Fire melts ice — remove freeze
+      tgt.burnDps = 5 * level;
+      tgt.burnTimer = 3 + level * 0.5;
       if (tgt.frozen) {
         tgt.frozen = false;
         tgt.freezeTimer = 0;
@@ -1060,7 +989,6 @@ function castLightning() {
   stopPoison();
   triggerCD('lightning');
   const s = n2c(indexTip.x, indexTip.y);
-  // Direction already in canvas space (flipped at source)
   let dx = indexDir.x,
     dy = indexDir.y,
     l = Math.hypot(dx, dy);
@@ -1074,7 +1002,7 @@ function castLightning() {
     y: s.y,
     dx,
     dy,
-    bouncesLeft: combo,
+    bouncesLeft: level,
     life: 1.5,
     maxLife: 1.5,
     active: true,
@@ -1086,24 +1014,22 @@ function castLightning() {
 }
 function castPoison() {
   if (!isReady('poison')) return;
-  // Interrupt any running poison and restart
   stopPoison();
   triggerCD('poison');
   poisonActive = true;
-  _poisonTimeout = setTimeout(stopPoison, (4 + combo) * 1000);
+  _poisonTimeout = setTimeout(stopPoison, (4 + level) * 1000);
   flash('☠️ ' + t('poison'), '#a855f7');
   markActive('poison');
   sndPoison();
 }
-/* ── FREEZE ──────────────────────────────────────────────────── */
 function castFreeze() {
   if (!isReady('freeze') || !palmCenter) return;
   stopPoison();
   triggerCD('freeze');
-  const pos = n2c(palmCenter.x, palmCenter.y);
-  const radius = palmRadius * 3.5;
-  const freezeDur = 5 + (combo - 1) * 1; // 5s x1 → 8s x4
-  const dmgBonus = 0.3 + (combo - 1) * 0.1; // 30% x1 → 60% x4
+  const pos = n2c(palmCenter.x, palmCenter.y),
+    radius = palmRadius * 3.5;
+  const freezeDur = 5 + (level - 1) * 1,
+    dmgBonus = 0.3 + (level - 1) * 0.1;
   let frozeCount = 0;
   for (const tgt of targets) {
     if (Math.hypot(tgt.x - pos.x, tgt.y - pos.y) < radius) {
@@ -1148,7 +1074,6 @@ function castFreeze() {
   markActive('freeze');
   sndFreeze();
 }
-
 function castHeal() {
   if (!isReady('heal') || !palmCenter) return;
   triggerCD('heal');
@@ -1293,11 +1218,11 @@ function updateParticles(dt) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   POISON TRAIL — runs regardless of gesture
+   POISON TRAIL
    ═══════════════════════════════════════════════════════════════ */
 function updatePoisonTrail(dt) {
-  const dur = 4 + combo,
-    cost = Math.max(1.5, 5 - combo * 0.8);
+  const dur = 4 + level,
+    cost = Math.max(1.5, 5 - level * 0.8);
   for (let i = poisonTrail.length - 1; i >= 0; i--) {
     poisonTrail[i].life -= dt;
     if (poisonTrail[i].life <= 0) poisonTrail.splice(i, 1);
@@ -1316,7 +1241,6 @@ function updatePoisonTrail(dt) {
         }
   }
 }
-
 function takeDamage(amount) {
   hp -= amount;
   sndDamage();
@@ -1339,7 +1263,6 @@ let tSpawnTimer = 0,
   pSpawnTimer = 0,
   tSpawnInt = 6,
   pInt = BASE_PROJ_INT;
-
 function updateWave(dt) {
   waveTimer += dt;
   if (waveTimer >= 30) {
@@ -1395,7 +1318,6 @@ function drawBg() {
     }
   }
 }
-
 function drawTargets() {
   for (const tgt of targets) {
     const ratio = tgt.hp / tgt.maxHp,
@@ -1576,11 +1498,9 @@ function drawSpellFX() {
       gCtx.strokeStyle = '#a5f3fc';
       gCtx.lineWidth = 3;
       gCtx.stroke();
-      // Inner fill
       gCtx.globalAlpha = alpha * 0.12;
       gCtx.fillStyle = '#a5f3fc';
       gCtx.fill();
-      // Second ring slightly behind
       gCtx.globalAlpha = alpha * 0.4;
       gCtx.shadowBlur = 20;
       gCtx.beginPath();
@@ -1609,8 +1529,6 @@ function drawSpellFX() {
     }
   }
 }
-
-/* ── Hand skeleton ────────────────────────────────────────────── */
 function drawHands() {
   hCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
   if (!handLandmarks) return;
@@ -1641,9 +1559,7 @@ function drawHands() {
     gc = 'rgba(148,163,184,0.3)';
     tc = '#cbd5e1';
   }
-
   hCtx.save();
-  // Palm
   [
     [0, 5],
     [0, 9],
@@ -1663,7 +1579,6 @@ function drawHands() {
     hCtx.lineTo(pts[b].x, pts[b].y);
     hCtx.stroke();
   });
-  // Fingers
   [
     [0, 1, 2, 3, 4],
     [0, 5, 6, 7, 8],
@@ -1684,7 +1599,6 @@ function drawHands() {
       hCtx.stroke();
     }
   });
-  // Dots
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i],
       isTip = [4, 8, 12, 16, 20].includes(i),
@@ -1715,7 +1629,6 @@ function drawHands() {
       hCtx.fill();
     }
   }
-  // Pointing ring
   if (!poisonActive && currentGesture === 'POINTING') {
     const tip = pts[8],
       pulse = 0.6 + Math.sin(Date.now() / 180) * 0.4;
@@ -1736,7 +1649,6 @@ function drawHands() {
     hCtx.fill();
     hCtx.restore();
   }
-  // Shield aura
   if (!poisonActive && currentGesture === 'OPEN_HAND' && palmCenter) {
     const pc = n2c(palmCenter.x, palmCenter.y),
       phase = (Date.now() % 1400) / 1400;
@@ -1754,7 +1666,6 @@ function drawHands() {
     hCtx.fill();
     hCtx.restore();
   }
-  // Poison wisps
   if (poisonActive && handLandmarks) {
     const wrist = pts[0];
     for (let w = 0; w < 3; w++) {
@@ -1811,32 +1722,23 @@ function gameLoop(ts) {
   updateHUD();
   raf = requestAnimationFrame(gameLoop);
 }
-
 function updateHUD() {
-  // HP
   document.getElementById('hpNumber').textContent = Math.ceil(hp) + ' / 100';
   const bar = document.getElementById('hpBar');
   bar.style.width = hp + '%';
   bar.style.background =
     hp > 50 ? 'var(--hp-full)' : hp > 25 ? 'var(--hp-mid)' : 'var(--hp-low)';
-  // Score (top-left) & Timer (top-right) — no overlap
   document.getElementById('hudScore').textContent = score.toLocaleString();
   const secs = Math.floor(gameTime);
   document.getElementById('hudTimer').textContent =
     Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
-  // Combo (top-right, below timer)
-  const cv = document.getElementById('comboVal');
-  cv.textContent = 'LVL ' + combo;
+  const cv = document.getElementById('levelVal');
+  cv.textContent = 'LVL ' + level;
   cv.className =
-    'combo-value' +
-    (combo >= 4 ? ' x4' : combo >= 3 ? ' x3' : combo >= 2 ? ' x2' : '');
-  // Progress bar toward next level
+    'level-value' +
+    (level >= 4 ? ' x4' : level >= 3 ? ' x3' : level >= 2 ? ' x2' : '');
   const prog = document.getElementById('levelProgress');
-  if (prog) {
-    const pct = (comboKills / killsForNextLevel(combo)) * 100;
-    prog.style.width = pct + '%';
-  }
-  // Cooldowns
+  if (prog) prog.style.width = (levelKills / killsToLevel(level)) * 100 + '%';
   for (const s of ['shield', 'fire', 'lightning', 'poison', 'heal', 'freeze']) {
     const left = cdLeft(s),
       el = document.getElementById('cd-' + s),
@@ -1914,14 +1816,12 @@ function initSpeech() {
     document.getElementById('micDot').classList.add('active');
     for (let i = e.resultIndex; i < e.results.length; i++)
       for (let a = 0; a < e.results[i].length; a++) {
-        // Normalize: lowercase + strip accents so "éclair"=="eclair", "brûlure"=="brulure"
         const norm = (s) =>
           s
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase();
         const tx = norm(e.results[i][a].transcript.trim());
-        // Build flat list sorted by word length desc (longer words matched first)
         const spellEntries = [];
         for (const [k, words] of Object.entries(LANG[currentLang].spells))
           for (const w of words) spellEntries.push({ k, w: norm(w) });
@@ -2005,7 +1905,7 @@ function executeSpell(k) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   MEDIAPIPE — single hand
+   MEDIAPIPE
    ═══════════════════════════════════════════════════════════════ */
 let mpCamera = null,
   mpHands = null;
@@ -2041,12 +1941,11 @@ function onHandResults(results) {
   }
   const lm = results.multiHandLandmarks[0];
   handLandmarks = lm;
-  // Direction in pixel canvas coords — same transform as pts[] in drawHands
   const W = gameCanvas.width,
     H = gameCanvas.height;
   const tip8x = (1 - lm[8].x) * W,
-    tip8y = lm[8].y * H;
-  const dip7x = (1 - lm[7].x) * W,
+    tip8y = lm[8].y * H,
+    dip7x = (1 - lm[7].x) * W,
     dip7y = lm[7].y * H;
   const cdx = tip8x - dip7x,
     cdy = tip8y - dip7y,
@@ -2089,9 +1988,8 @@ function startGame() {
   startTime = Date.now();
   wave = 1;
   waveTimer = 0;
-  combo = 1;
-  comboKills = 0;
-  bestCombo = 1; // combo=level
+  level = 1;
+  levelKills = 0;
   targets = [];
   projectiles = [];
   drops = [];
@@ -2114,7 +2012,6 @@ function startGame() {
   _sGesture = 'NONE';
   _lost = 0;
   _sweepHist.length = 0;
-
   showScreen(null);
   ['hud', 'waveBadge', 'gestureBadge', 'spellsBar', 'hpWrap'].forEach((id) =>
     document.getElementById(id).classList.remove('hidden'),
@@ -2156,7 +2053,7 @@ function endGame() {
   document.getElementById('go-time').textContent =
     Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
   document.getElementById('go-kills').textContent = kills;
-  document.getElementById('go-combo').textContent = 'LVL ' + bestCombo;
+  document.getElementById('go-level').textContent = 'LVL ' + level;
   document.getElementById('go-best').textContent = bestScore.toLocaleString();
   showScreen('gameover');
 }
@@ -2201,13 +2098,12 @@ function updateRulesText() {
     'r-lightning-name': en ? 'LIGHTNING' : 'ÉCLAIR',
     'r-poison-name': en ? 'POISON' : 'POISON',
     'r-freeze-name': en ? 'FREEZE' : 'GEL',
-    'r-heal-title': en ? '💚 HEAL' : '💚 SOIN',
     'r-shield-desc': en
       ? 'Open hand + say "shield" (or protect/barrier). Destroys projectiles near your palm.'
       : 'Main ouverte + dire "bouclier" (ou protection/barriere). Détruit les projectiles proches.',
     'r-fire-desc': en
-      ? 'Point fingertip ON a target + say "fire". Ignites it with magic flame.'
-      : 'Bout du doigt SUR la cible + dire "feu". Enflamme la cible.',
+      ? 'Point near a target + say "fire". Burns all targets in range. Scales with level.'
+      : 'Pointer près d\'une cible + dire "flamme". Brûle les cibles dans le rayon. Scale avec le niveau.',
     'r-lightning-desc': en
       ? 'Point + say "lightning" (or thunder/bolt/zap). Bounces off targets & walls. More bounces with higher level.'
       : 'Pointer + dire "eclair" (ou foudre/tonnerre). Rebondit sur cibles/murs. Plus de rebonds avec le niveau.',
@@ -2219,12 +2115,12 @@ function updateRulesText() {
       : 'Dire "soin" (ou guerir/sante) pour ramasser les drops verts.',
     'r-freeze-desc': en
       ? 'Open hand + say "freeze" (or ice/frost/cold). Freezes nearby targets 5s — they stop and take +30% damage. Scales with level.'
-      : 'Main ouverte + dire "gel" (ou geler/glace/froid). Gèle les cibles proches 5s — immobilisées et +30% dégâts reçus. Scale avec le niveau.',
-    'r-combo-desc': en
-      ? 'Kill enemies to level up (6 kills → L2, 10 more → L3...). Each level-up fully heals you. Higher level = stronger spells, no reset.'
-      : 'Tuez des ennemis pour monter de niveau (6 kills → N2, 10 de plus → N3...). Chaque montée soigne à fond. Niveau plus élevé = sorts plus forts, pas de reset.',
+      : 'Main ouverte + dire "gel" (ou geler/glace/froid). Gèle les cibles proches 5s — +30% dégâts reçus. Scale avec le niveau.',
+    'r-level-desc': en
+      ? 'Kill enemies to level up. Each level-up fully heals you and powers up your spells.'
+      : 'Tuez des ennemis pour monter de niveau. Chaque montée vous soigne à fond et renforce vos sorts.',
     'r-proj-desc': en
-      ? 'Blue → orange → red. Shield them when red, before they vanish.'
+      ? 'Blue → orange → red. Shield when red, before they vanish.'
       : 'Bleu → orange → rouge. Bouclier quand rouge.',
     'r-warning-desc': en
       ? 'Voice requires Chrome or Edge. Allow camera & microphone.'
@@ -2234,14 +2130,12 @@ function updateRulesText() {
     const el = document.getElementById(id);
     if (el) el.textContent = txt;
   }
-  // Show all aliases in voice-cmd badges
   for (const s of ['shield', 'fire', 'lightning', 'poison', 'freeze']) {
     const el = document.getElementById('r-' + s + '-cmd');
     if (!el) continue;
     const words = LANG[currentLang].spells[s];
     el.textContent = words.map((w) => '"' + w + '"').join('  /  ');
   }
-  // Heal aliases in misc section title
   const healWords = LANG[currentLang].spells['heal'];
   const healEl = document.getElementById('r-heal-title');
   if (healEl)
@@ -2266,7 +2160,7 @@ function updateSpellNames() {
     'go-l-score': 'Score',
     'go-l-time': en ? 'Time' : 'Durée',
     'go-l-kills': 'Kills',
-    'go-l-combo': en ? 'Best level' : 'Meilleur niveau',
+    'go-l-level': en ? 'Final level' : 'Niveau final',
     'go-l-record': en ? 'Best score' : 'Record',
     'go-btn': en ? 'PLAY AGAIN' : 'REJOUER',
   };
@@ -2279,10 +2173,10 @@ function updateSpellNames() {
 /* ── BG selector ──────────────────────────────────────────────── */
 function selectBg(mode) {
   bgMode = mode;
+  localStorage.setItem('ss_bg', mode); // FIX 2: persist bg choice
   document
     .querySelectorAll('.bg-btn')
     .forEach((b) => b.classList.toggle('selected', b.dataset.bg === mode));
-  // handCanvas always visible — skeleton shown in both modes
 }
 
 /* ── UI helpers ───────────────────────────────────────────────── */
@@ -2302,15 +2196,15 @@ function markActive(s) {
   sl.classList.add('active');
   setTimeout(() => sl.classList.remove('active'), 400);
 }
-function showComboUp() {
-  const cv = document.getElementById('comboVal');
+function showLevelUp() {
+  const cv = document.getElementById('levelVal');
   cv.style.transform = 'scale(1.5)';
   setTimeout(() => (cv.style.transform = ''), 400);
   flash(
-    '⬆️ LEVEL ' + combo + '!',
-    combo >= 4 ? '#f97316' : combo >= 3 ? '#f59e0b' : '#38bdf8',
+    '⬆️ LEVEL ' + level + '!',
+    level >= 4 ? '#f97316' : level >= 3 ? '#f59e0b' : '#38bdf8',
   );
-  sndComboUp();
+  sndLevelUp();
 }
 function announceWave(silent) {
   if (silent) return;
@@ -2323,20 +2217,14 @@ function announceWave(silent) {
 }
 
 /* ── INIT ─────────────────────────────────────────────────────── */
-// Restore persisted preferences
 (function () {
   const savedLang = localStorage.getItem('ss_lang');
-  if (savedLang === 'fr' || savedLang === 'en') {
-    currentLang = savedLang;
-  }
+  if (savedLang === 'fr' || savedLang === 'en') currentLang = savedLang;
   const savedBg = localStorage.getItem('ss_bg');
-  if (savedBg === 'camera' || savedBg === 'virtual') {
-    bgMode = savedBg;
-  }
+  if (savedBg === 'camera' || savedBg === 'virtual') bgMode = savedBg;
 })();
 showScreen('title');
 updateRulesText();
-// Reflect restored state in UI
 document
   .querySelectorAll('.lang-btn')
   .forEach((b) =>

@@ -129,8 +129,8 @@ body {
   margin-bottom: 2px;
 }
 
-/* Combo — top right, clear of mic dot */
-.hud-combo {
+/* Level — top right, clear of mic dot */
+.hud-level {
   position: absolute;
   top: 16px;
   right: 52px;
@@ -139,12 +139,12 @@ body {
   align-items: flex-end;
   gap: 2px;
 }
-.hud-combo-label {
+.hud-level-label {
   font-size: 9px;
   letter-spacing: 0.2em;
   color: var(--dim);
 }
-.combo-value {
+.level-value {
   font-family: var(--font-spell);
   font-size: 28px;
   font-weight: 700;
@@ -153,13 +153,13 @@ body {
     color 0.3s,
     transform 0.2s;
 }
-.combo-value.x2 {
+.level-value.x2 {
   color: var(--c2);
 }
-.combo-value.x3 {
+.level-value.x3 {
   color: var(--c3);
 }
-.combo-value.x4 {
+.level-value.x4 {
   color: var(--c4);
 }
 
