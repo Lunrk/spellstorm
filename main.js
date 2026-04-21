@@ -1317,7 +1317,6 @@ function updatePoisonTrail(dt) {
 
 function takeDamage(amount) {
   hp -= amount;
-  breakCombo();
   sndDamage();
   if (hp <= 0) {
     hp = 0;
@@ -1825,10 +1824,16 @@ function updateHUD() {
     Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
   // Combo (top-right, below timer)
   const cv = document.getElementById('comboVal');
-  cv.textContent = '×' + combo;
+  cv.textContent = 'LVL ' + combo;
   cv.className =
     'combo-value' +
     (combo >= 4 ? ' x4' : combo >= 3 ? ' x3' : combo >= 2 ? ' x2' : '');
+  // Progress bar toward next level
+  const prog = document.getElementById('levelProgress');
+  if (prog) {
+    const pct = (comboKills / killsForNextLevel(combo)) * 100;
+    prog.style.width = pct + '%';
+  }
   // Cooldowns
   for (const s of ['shield', 'fire', 'lightning', 'poison', 'heal', 'freeze']) {
     const left = cdLeft(s),
@@ -2084,7 +2089,7 @@ function startGame() {
   waveTimer = 0;
   combo = 1;
   comboKills = 0;
-  bestCombo = 1;
+  bestCombo = 1; // combo=level
   targets = [];
   projectiles = [];
   drops = [];
@@ -2149,7 +2154,7 @@ function endGame() {
   document.getElementById('go-time').textContent =
     Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
   document.getElementById('go-kills').textContent = kills;
-  document.getElementById('go-combo').textContent = '×' + bestCombo;
+  document.getElementById('go-combo').textContent = 'LVL ' + bestCombo;
   document.getElementById('go-best').textContent = bestScore.toLocaleString();
   showScreen('gameover');
 }
@@ -2202,20 +2207,20 @@ function updateRulesText() {
       ? 'Point fingertip ON a target + say "fire". Ignites it with magic flame.'
       : 'Bout du doigt SUR la cible + dire "feu". Enflamme la cible.',
     'r-lightning-desc': en
-      ? 'Point + say "lightning" (or thunder/bolt/zap). Bounces off targets & walls. More bounces with higher combo.'
-      : 'Pointer + dire "eclair" (ou foudre/tonnerre). Rebondit sur cibles/murs. Plus de rebonds avec le combo.',
+      ? 'Point + say "lightning" (or thunder/bolt/zap). Bounces off targets & walls. More bounces with higher level.'
+      : 'Pointer + dire "eclair" (ou foudre/tonnerre). Rebondit sur cibles/murs. Plus de rebonds avec le niveau.',
     'r-poison-desc': en
-      ? 'Say "poison" (or toxic/venom). Toxic trail wherever your hand moves. Costs HP (reduced by combo). Recast or use another spell to stop.'
-      : 'Dire "poison" (ou toxique/venin). Traînée toxique partout. Coûte des PV (réduit par combo). Relancer ou autre sort pour stopper.',
+      ? 'Say "poison" (or toxic/venom). Toxic trail wherever your hand moves. Costs HP (reduced by level). Recast or use another spell to stop.'
+      : 'Dire "poison" (ou toxique/venin). Traînée toxique partout. Coûte des PV (réduit par niveau). Relancer ou autre sort pour stopper.',
     'r-heal-desc': en
       ? 'Say "heal" (or health/cure/restore) to collect green drops from killed targets.'
       : 'Dire "soin" (ou guerir/sante) pour ramasser les drops verts.',
     'r-freeze-desc': en
-      ? 'Open hand + say "freeze" (or ice/frost/cold). Freezes nearby targets 5s — they stop and take +30% damage. Scales with combo.'
-      : 'Main ouverte + dire "gel" (ou geler/glace/froid). Gèle les cibles proches 5s — immobilisées et +30% dégâts reçus. Scale avec le combo.',
+      ? 'Open hand + say "freeze" (or ice/frost/cold). Freezes nearby targets 5s — they stop and take +30% damage. Scales with level.'
+      : 'Main ouverte + dire "gel" (ou geler/glace/froid). Gèle les cibles proches 5s — immobilisées et +30% dégâts reçus. Scale avec le niveau.',
     'r-combo-desc': en
-      ? 'Kill 3 without taking damage → ×2, ×3, ×4. Damage resets. Higher combo = stronger spells.'
-      : '3 kills sans dégâts → ×2, ×3, ×4. Dégâts = reset. Combo = sorts plus forts.',
+      ? 'Kill enemies to level up (6 kills → L2, 10 more → L3...). Each level-up fully heals you. Higher level = stronger spells, no reset.'
+      : 'Tuez des ennemis pour monter de niveau (6 kills → N2, 10 de plus → N3...). Chaque montée soigne à fond. Niveau plus élevé = sorts plus forts, pas de reset.',
     'r-proj-desc': en
       ? 'Blue → orange → red. Shield them when red, before they vanish.'
       : 'Bleu → orange → rouge. Bouclier quand rouge.',
@@ -2259,7 +2264,7 @@ function updateSpellNames() {
     'go-l-score': 'Score',
     'go-l-time': en ? 'Time' : 'Durée',
     'go-l-kills': 'Kills',
-    'go-l-combo': en ? 'Best combo' : 'Meilleur combo',
+    'go-l-combo': en ? 'Best level' : 'Meilleur niveau',
     'go-l-record': en ? 'Best score' : 'Record',
     'go-btn': en ? 'PLAY AGAIN' : 'REJOUER',
   };
@@ -2300,9 +2305,10 @@ function showComboUp() {
   cv.style.transform = 'scale(1.5)';
   setTimeout(() => (cv.style.transform = ''), 400);
   flash(
-    '🔥 ×' + combo + ' COMBO!',
+    '⬆️ LEVEL ' + combo + '!',
     combo >= 4 ? '#f97316' : combo >= 3 ? '#f59e0b' : '#38bdf8',
   );
+  sndComboUp(); // already called in addKill path
   sndComboUp();
 }
 function announceWave(silent) {

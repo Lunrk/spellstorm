@@ -138,7 +138,7 @@
             >
           </div>
           <div>
-            <strong id="r-combo-title">🔥 COMBO</strong><br /><span
+            <strong id="r-combo-title">⬆️ LEVEL</strong><br /><span
               id="r-combo-desc"
               >3 kills without damage → ×2→×3→×4. Higher combo = stronger
               spells.</span
@@ -182,7 +182,7 @@
             ><span class="go-stat-value" id="go-kills">0</span>
           </div>
           <div class="go-stat">
-            <span class="go-stat-label" id="go-l-combo">Best combo</span
+            <span class="go-stat-label" id="go-l-combo">Best level</span
             ><span class="go-stat-value" id="go-combo">×1</span>
           </div>
           <div class="go-stat">
@@ -210,8 +210,28 @@
       </div>
       <!-- Combo — below timer -->
       <div class="hud-combo">
-        <span class="hud-combo-label">COMBO</span>
-        <span class="combo-value" id="comboVal">×1</span>
+        <span class="hud-combo-label">LEVEL</span>
+        <span class="combo-value" id="comboVal">LVL 1</span>
+        <div
+          style="
+            width: 52px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 99px;
+            margin-top: 3px;
+          "
+        >
+          <div
+            id="levelProgress"
+            style="
+              height: 100%;
+              width: 0%;
+              background: currentColor;
+              border-radius: 99px;
+              transition: width 0.2s;
+            "
+          ></div>
+        </div>
       </div>
     </div>
 
