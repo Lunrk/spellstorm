@@ -6,12 +6,13 @@
 const LANG = {
   en: {
     spells: {
-      shield: ['shield', 'protect', 'barrier'],
+      shield: ['shield', 'protect', 'barrier', 'defense'],
       fire: ['fire', 'burn', 'ignite', 'flame'],
       lightning: ['lightning', 'thunder', 'bolt', 'zap'],
       poison: ['poison', 'toxic', 'venom'],
       heal: ['heal', 'health', 'cure', 'restore'],
       freeze: ['freeze', 'ice', 'frost', 'cold'],
+      blackhole: ['blackhole', 'black hole', 'void', 'vortex', 'singularity'],
     },
     ui: {
       shield: 'SHIELD',
@@ -29,12 +30,13 @@ const LANG = {
   },
   fr: {
     spells: {
-      shield: ['bouclier', 'protection', 'barriere'],
+      shield: ['bouclier', 'protection', 'barriere', 'defense', 'défense'],
       fire: ['flamme', 'feu', 'brulure', 'bruler', 'incendie'],
       lightning: ['eclair', 'foudre', 'tonnerre'],
       poison: ['poison', 'toxique', 'venin'],
       heal: ['soin', 'guerir', 'sante', 'soigner'],
       freeze: ['gel', 'geler', 'glace', 'froid', 'congeler'],
+      blackhole: ['trou noir', 'vortex', 'singularite', 'neant'],
     },
     ui: {
       shield: 'BOUCLIER',
@@ -1322,6 +1324,25 @@ function castHeal() {
   );
 }
 
+function castBlackhole() {
+  if (!isReady('blackhole') || !indexTip || currentGesture !== 'POINTING')
+    return;
+  stopPoison();
+  triggerCD('blackhole');
+  const pos = n2c(indexTip.x, indexTip.y);
+  const dur = 3 + level;
+  spellFX.push({
+    type: 'blackhole',
+    x: pos.x,
+    y: pos.y,
+    life: dur,
+    maxLife: dur,
+    dmgAcc: 0,
+  });
+  flash('🕳️ ' + t('blackhole'), '#7c3aed');
+  markActive('blackhole');
+}
+
 /* ═══════════════════════════════════════════════════════════════
    FX UPDATE
    ═══════════════════════════════════════════════════════════════ */
@@ -1337,6 +1358,33 @@ function updateSpellFX(dt) {
     }
     if (fx.type === 'shield' || fx.type === 'freeze')
       fx.r = (1 - fx.life / fx.maxLife) * fx.maxR;
+    if (fx.type === 'blackhole') {
+      const pullStr = 0.8 + level * 0.15; // attraction force
+      const dmgPerSec = 5 + 5 * level;
+      fx.dmgAcc = (fx.dmgAcc || 0) + dmgPerSec * dt;
+      for (const tgt of targets) {
+        const dx = fx.x - tgt.x,
+          dy = fx.y - tgt.y,
+          dist = Math.max(Math.hypot(dx, dy), 1);
+        // Pull toward center
+        const force = pullStr * (1 + 200 / dist) * dt * 60;
+        tgt.vx += (dx / dist) * force * 0.02;
+        tgt.vy += (dy / dist) * force * 0.02;
+        // Clamp speed
+        const spd = Math.hypot(tgt.vx, tgt.vy);
+        if (spd > tgt.speed * 3) {
+          tgt.vx *= (tgt.speed * 3) / spd;
+          tgt.vy *= (tgt.speed * 3) / spd;
+        }
+        // Tick damage
+        tgt.hp -= dmgPerSec * dt;
+        tgt._bhDmgAcc = (tgt._bhDmgAcc || 0) + dmgPerSec * dt;
+        if (tgt._bhDmgAcc >= 8) {
+          spawnDmg(tgt.x, tgt.y, tgt._bhDmgAcc, '#7c3aed');
+          tgt._bhDmgAcc = 0;
+        }
+      }
+    }
     if (fx.type === 'lightning' && fx.active) {
       for (let s = 0; s < 3; s++) {
         fx.x += fx.dx * fx.speed;
@@ -2063,6 +2111,44 @@ function drawSpellFX() {
       gCtx.stroke();
       gCtx.restore();
     }
+    if (fx.type === 'blackhole') {
+      const t2 = fx.life / fx.maxLife,
+        pulse = 0.5 + Math.sin(Date.now() / 120) * 0.5;
+      const r = 30 + level * 8;
+      gCtx.save();
+      // Dark core
+      gCtx.shadowBlur = 40 + pulse * 20;
+      gCtx.shadowColor = '#7c3aed';
+      const grad = gCtx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, r);
+      grad.addColorStop(0, 'rgba(0,0,0,0.95)');
+      grad.addColorStop(0.5, 'rgba(124,58,237,0.6)');
+      grad.addColorStop(1, 'rgba(124,58,237,0)');
+      gCtx.globalAlpha = t2;
+      gCtx.beginPath();
+      gCtx.arc(fx.x, fx.y, r * (1 + pulse * 0.08), 0, Math.PI * 2);
+      gCtx.fillStyle = grad;
+      gCtx.fill();
+      // Spinning ring
+      gCtx.globalAlpha = t2 * 0.7;
+      for (let ri = 0; ri < 3; ri++) {
+        const angle =
+          (Date.now() / 400) * (ri % 2 === 0 ? 1 : -1) + (ri * Math.PI * 2) / 3;
+        const rx = fx.x + Math.cos(angle) * (r * 0.7),
+          ry = fx.y + Math.sin(angle) * (r * 0.7);
+        gCtx.beginPath();
+        gCtx.arc(rx, ry, 3 + ri, 0, Math.PI * 2);
+        gCtx.fillStyle = '#a78bfa';
+        gCtx.fill();
+      }
+      // Event horizon ring
+      gCtx.globalAlpha = t2 * (0.4 + pulse * 0.3);
+      gCtx.beginPath();
+      gCtx.arc(fx.x, fx.y, r, 0, Math.PI * 2);
+      gCtx.strokeStyle = '#7c3aed';
+      gCtx.lineWidth = 2;
+      gCtx.stroke();
+      gCtx.restore();
+    }
     if (fx.type === 'lightning' && fx.segments.length > 1) {
       gCtx.save();
       gCtx.globalAlpha = alpha;
@@ -2295,7 +2381,15 @@ function updateHUD() {
     (level >= 4 ? ' x4' : level >= 3 ? ' x3' : level >= 2 ? ' x2' : '');
   const prog = document.getElementById('levelProgress');
   if (prog) prog.style.width = (levelKills / killsToLevel(level)) * 100 + '%';
-  for (const s of ['shield', 'fire', 'lightning', 'poison', 'heal', 'freeze']) {
+  for (const s of [
+    'shield',
+    'fire',
+    'lightning',
+    'poison',
+    'heal',
+    'freeze',
+    'blackhole',
+  ]) {
     const left = cdLeft(s),
       el = document.getElementById('cd-' + s),
       slot = document.getElementById('slot-' + s);
@@ -2507,6 +2601,7 @@ function executeSpell(k) {
   else if (k === 'poison') castPoison();
   else if (k === 'heal') castHeal();
   else if (k === 'freeze') castFreeze();
+  else if (k === 'blackhole') castBlackhole();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2854,7 +2949,15 @@ function updateRulesText() {
   updateSpellNames();
 }
 function updateSpellNames() {
-  for (const s of ['shield', 'fire', 'lightning', 'poison', 'heal', 'freeze'])
+  for (const s of [
+    'shield',
+    'fire',
+    'lightning',
+    'poison',
+    'heal',
+    'freeze',
+    'blackhole',
+  ])
     document.getElementById('sn-' + s).textContent = t(s);
   const en = currentLang === 'en';
   const lbl = {
