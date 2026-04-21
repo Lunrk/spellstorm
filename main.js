@@ -798,7 +798,7 @@ function updateTargets(dt) {
     }
     if (tgt.poisoned) {
       tgt.poisonTimer -= dt;
-      tgt.hp -= 8 * dt;
+      tgt.hp -= 8 * level * dt;
       if (tgt.poisonTimer <= 0) tgt.poisoned = false;
     }
     if (tgt.frozen) {
@@ -906,7 +906,8 @@ function stopPoison() {
 }
 
 function castShield() {
-  if (!isReady('shield') || !palmCenter) return;
+  if (!isReady('shield') || !palmCenter || currentGesture !== 'OPEN_HAND')
+    return;
   stopPoison();
   triggerCD('shield');
   const pos = n2c(palmCenter.x, palmCenter.y),
@@ -937,7 +938,7 @@ function castShield() {
   sndShield();
 }
 function castFire() {
-  if (!isReady('fire') || !indexTip) return;
+  if (!isReady('fire') || !indexTip || currentGesture !== 'POINTING') return;
   stopPoison();
   const pos = n2c(indexTip.x, indexTip.y);
   const fireRad = 80 + level * 20;
@@ -964,6 +965,15 @@ function castFire() {
       hitCount++;
     }
   }
+  // Range indicator — always shown regardless of hit/miss
+  spellFX.push({
+    type: 'fire_range',
+    x: pos.x,
+    y: pos.y,
+    r: fireRad,
+    life: 0.5,
+    maxLife: 0.5,
+  });
   if (hitCount > 0) {
     triggerCD('fire');
     spawnFireParts(pos.x, pos.y);
@@ -985,7 +995,13 @@ function castFire() {
   }
 }
 function castLightning() {
-  if (!isReady('lightning') || !indexTip || !indexDir) return;
+  if (
+    !isReady('lightning') ||
+    !indexTip ||
+    !indexDir ||
+    currentGesture !== 'POINTING'
+  )
+    return;
   stopPoison();
   triggerCD('lightning');
   const s = n2c(indexTip.x, indexTip.y);
@@ -1023,7 +1039,8 @@ function castPoison() {
   sndPoison();
 }
 function castFreeze() {
-  if (!isReady('freeze') || !palmCenter) return;
+  if (!isReady('freeze') || !palmCenter || currentGesture !== 'OPEN_HAND')
+    return;
   stopPoison();
   triggerCD('freeze');
   const pos = n2c(palmCenter.x, palmCenter.y),
@@ -1122,7 +1139,7 @@ function updateSpellFX(dt) {
         let hit = false;
         for (const tgt of targets) {
           if (Math.hypot(tgt.x - fx.x, tgt.y - fx.y) < tgt.r + 8) {
-            tgt.hp -= 35;
+            tgt.hp -= 35 * level;
             spawnFX(tgt.x, tgt.y, '#ffe066', 10);
             if (fx.bouncesLeft > 0) {
               fx.bouncesLeft--;
@@ -1265,7 +1282,7 @@ let tSpawnTimer = 0,
   pInt = BASE_PROJ_INT;
 function updateWave(dt) {
   waveTimer += dt;
-  if (waveTimer >= 30) {
+  if (waveTimer >= 45) {
     waveTimer = 0;
     wave++;
     announceWave();
@@ -1486,6 +1503,24 @@ function drawSpellFX() {
       gCtx.strokeStyle = '#ff6b2b';
       gCtx.lineWidth = 2;
       gCtx.stroke();
+      gCtx.restore();
+    }
+    if (fx.type === 'fire_range') {
+      // Expanding ring showing the fire radius
+      const expand = 1 - fx.life / fx.maxLife; // 0→1 as it fades
+      gCtx.save();
+      gCtx.globalAlpha = alpha * 0.55;
+      gCtx.shadowBlur = 20;
+      gCtx.shadowColor = '#ff6b2b';
+      gCtx.beginPath();
+      gCtx.arc(fx.x, fx.y, fx.r * (0.85 + expand * 0.15), 0, Math.PI * 2);
+      gCtx.strokeStyle = '#ffe066';
+      gCtx.lineWidth = 2;
+      gCtx.stroke();
+      // Dashed inner fill hint
+      gCtx.globalAlpha = alpha * 0.06;
+      gCtx.fillStyle = '#ff6b2b';
+      gCtx.fill();
       gCtx.restore();
     }
     if (fx.type === 'freeze') {
