@@ -156,6 +156,7 @@ let indexTip = null,
   palmRadius = 0;
 let poisonActive = false,
   _poisonTimeout = null;
+let handLost = false; // true when hand is off-screen during gameplay
 let _pGesture = 'NONE',
   _pFrames = 0,
   _sGesture = 'NONE',
@@ -2203,10 +2204,12 @@ function onHandResults(results) {
     indexDir = null;
     palmCenter = null;
     updateGestureBadge();
+    if (gameState === STATE.PLAYING) showHandLost();
     return;
   }
   const lm = results.multiHandLandmarks[0];
   handLandmarks = lm;
+  if (gameState === STATE.PLAYING && handLost) hideHandLost();
   const W = gameCanvas.width,
     H = gameCanvas.height;
   const tip8x = (1 - lm[8].x) * W,
@@ -2259,6 +2262,8 @@ function startGame() {
   bossActive = false;
   bossSpawnPending = false;
   bossShootTimer = 0;
+  handLost = false;
+  document.getElementById('hand-lost-overlay').style.display = 'none';
   targets = [];
   projectiles = [];
   drops = [];
@@ -2336,6 +2341,29 @@ function showScreen(name) {
   );
   if (name)
     document.getElementById('screen-' + name).classList.remove('hidden');
+}
+function showHandLost() {
+  if (handLost) return;
+  handLost = true;
+  cancelAnimationFrame(raf);
+  stopPoison();
+  const el = document.getElementById('hand-lost-overlay');
+  const msg = document.getElementById('hand-lost-msg');
+  const en = currentLang === 'en';
+  if (msg) msg.textContent = en ? 'HAND NOT DETECTED' : 'MAIN NON DÉTECTÉE';
+  const sub = el.querySelector('div:last-child');
+  if (sub)
+    sub.textContent = en
+      ? 'Place your hand in front of the camera'
+      : 'Replacez votre main devant la caméra';
+  el.style.display = 'flex';
+}
+function hideHandLost() {
+  if (!handLost) return;
+  handLost = false;
+  document.getElementById('hand-lost-overlay').style.display = 'none';
+  lastTime = performance.now();
+  raf = requestAnimationFrame(gameLoop);
 }
 function showRules() {
   showScreen('rules');

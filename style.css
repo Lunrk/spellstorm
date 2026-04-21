@@ -801,3 +801,15 @@ body {
     width: 240px;
   }
 }
+
+@keyframes handPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}

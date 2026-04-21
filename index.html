@@ -322,6 +322,49 @@
       </div>
     </div>
 
+    <!-- ══ HAND LOST OVERLAY ══ -->
+    <div
+      id="hand-lost-overlay"
+      style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 8, 16, 0.92);
+        backdrop-filter: blur(4px);
+        z-index: 500;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+      "
+    >
+      <div
+        style="font-size: 3rem; animation: handPulse 1.2s ease-in-out infinite"
+      >
+        ✋
+      </div>
+      <div
+        style="
+          font-family: 'Orbitron', sans-serif;
+          font-size: 1.1rem;
+          color: #fff;
+          letter-spacing: 0.1em;
+        "
+        id="hand-lost-msg"
+      >
+        MAIN NON DÉTECTÉE
+      </div>
+      <div
+        style="
+          font-family: 'Rajdhani', sans-serif;
+          font-size: 0.85rem;
+          color: rgba(255, 255, 255, 0.4);
+        "
+      >
+        Replacez votre main devant la caméra
+      </div>
+    </div>
+
     <!-- Wave announce -->
     <div class="wave-announce" id="waveAnnounce"></div>
 
