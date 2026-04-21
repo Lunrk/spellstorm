@@ -83,6 +83,7 @@ const STATE = {
   PLAYING: 'playing',
   PAUSED: 'paused',
   GAMEOVER: 'gameover',
+  VICTORY: 'victory',
 };
 let gameState = STATE.TITLE;
 let hp = 100,
@@ -138,13 +139,36 @@ const cdTimer = {
   freeze: 0,
 };
 function isReady(s) {
-  return Date.now() >= cdTimer[s];
+  return Date.now() >= cdTimer[s] && !isBlocked(s);
 }
 function triggerCD(s) {
   cdTimer[s] = Date.now() + CD[s];
 }
 function cdLeft(s) {
   return Math.max(0, cdTimer[s] - Date.now());
+}
+
+/* ── SPECIAL ENEMIES ─────────────────────────────────────────── */
+const MAX_WAVE = 20;
+// Which special types are unlocked per wave threshold
+// healer: wave 1+, bomb: wave 6+, accelerator: wave 11+, blocker: wave 16+
+const SPECIAL_TYPES = ['healer', 'bomb', 'accelerator', 'blocker'];
+const SPECIAL_UNLOCK = [1, 6, 11, 16]; // min wave to appear
+const SPECIAL_CHANCE = 0.18; // probability per spawn that it's a special
+
+// Blocked spells: { spellKey: timestamp when block expires }
+let blockedSpells = {};
+function isBlocked(s) {
+  return blockedSpells[s] && Date.now() < blockedSpells[s];
+}
+function blockSpell(s, dur = 10000) {
+  blockedSpells[s] = Date.now() + dur;
+  flash('🔒 ' + s.toUpperCase() + ' BLOQUÉ !', '#c084fc');
+}
+function updateBlockedSpells() {
+  const now = Date.now();
+  for (const k of Object.keys(blockedSpells))
+    if (now >= blockedSpells[k]) delete blockedSpells[k];
 }
 
 /* ── HAND TRACKING ────────────────────────────────────────────── */
@@ -718,12 +742,22 @@ function stopMusic() {
    ═══════════════════════════════════════════════════════════════ */
 function spawnTarget() {
   const W = gameCanvas.width,
-    H = gameCanvas.height,
-    r = 28 + Math.random() * 16;
-  const hp = 20 + wave * 15,
-    spd = (0.6 + wave * 0.15) * (0.8 + Math.random() * 0.6);
+    H = gameCanvas.height;
   let x, y;
   const s = Math.floor(Math.random() * 4);
+  // Determine type — maybe spawn a special
+  let specialType = null;
+  if (Math.random() < SPECIAL_CHANCE) {
+    const available = SPECIAL_TYPES.filter((_, i) => wave >= SPECIAL_UNLOCK[i]);
+    if (available.length)
+      specialType = available[Math.floor(Math.random() * available.length)];
+  }
+  const r = specialType ? 32 : 28 + Math.random() * 16;
+  const hp = specialType ? Math.round((20 + wave * 15) * 1.3) : 20 + wave * 15;
+  const spd =
+    (specialType === 'accelerator' ? 1.2 : 1) *
+    (0.6 + wave * 0.15) *
+    (0.8 + Math.random() * 0.6);
   if (s === 0) {
     x = Math.random() * W;
     y = -r;
@@ -740,7 +774,7 @@ function spawnTarget() {
   const cx = W / 2 + (Math.random() - 0.5) * W * 0.4,
     cy = H / 2 + (Math.random() - 0.5) * H * 0.4;
   const dir = Math.atan2(cy - y, cx - x);
-  targets.push({
+  const base = {
     x,
     y,
     r,
@@ -759,7 +793,23 @@ function spawnTarget() {
     frozen: false,
     freezeTimer: 0,
     freezeDmgBonus: 0,
-  });
+  };
+  if (specialType === 'bomb') {
+    targets.push({
+      ...base,
+      specialType: 'bomb',
+      bombTimer: 10,
+      bombArmed: true,
+    });
+  } else if (specialType === 'healer') {
+    targets.push({ ...base, specialType: 'healer', healTimer: 3 }); // heals every 3s
+  } else if (specialType === 'accelerator') {
+    targets.push({ ...base, specialType: 'accelerator', accelTimer: 4 });
+  } else if (specialType === 'blocker') {
+    targets.push({ ...base, specialType: 'blocker', blockTimer: 5 }); // tries to block every 5s
+  } else {
+    targets.push(base);
+  }
 }
 function updateTargets(dt) {
   const W = gameCanvas.width,
@@ -814,6 +864,91 @@ function updateTargets(dt) {
       if (tgt.freezeTimer <= 0) {
         tgt.frozen = false;
         tgt.freezeDmgBonus = 0;
+      }
+    }
+    // ── Special enemy behaviors ──────────────────────────────────
+    if (!tgt.isBoss && tgt.specialType === 'bomb' && tgt.bombArmed) {
+      tgt.bombTimer -= dt;
+      if (tgt.bombTimer <= 0) {
+        // BOOM — damage player, big explosion
+        const dist = Math.hypot(
+          tgt.x - gameCanvas.width / 2,
+          tgt.y - gameCanvas.height / 2,
+        );
+        takeDamage(Math.min(40, 15 + wave * 2));
+        for (let _i = 0; _i < 3; _i++)
+          spawnFX(
+            tgt.x + (Math.random() - 0.5) * tgt.r * 2,
+            tgt.y + (Math.random() - 0.5) * tgt.r * 2,
+            '#f97316',
+            20,
+          );
+        spawnFX(tgt.x, tgt.y, '#ffe066', 30);
+        flash(
+          '💣 BOOM ! ' +
+            (currentLang === 'fr' ? 'Dégâts explosion!' : 'Bomb exploded!'),
+          '#f97316',
+        );
+        sndDamage();
+        tgt.bombArmed = false;
+        tgt.hp = 0; // dies after exploding
+      }
+    }
+    if (!tgt.isBoss && tgt.specialType === 'healer') {
+      tgt.healTimer -= dt;
+      if (tgt.healTimer <= 0) {
+        tgt.healTimer = 3;
+        // Heal nearby non-special targets
+        for (const other of targets) {
+          if (
+            other !== tgt &&
+            !other.isBoss &&
+            !other.specialType &&
+            Math.hypot(other.x - tgt.x, other.y - tgt.y) < 400
+          ) {
+            other.hp = Math.min(other.maxHp, other.hp + other.maxHp * 0.15);
+            spawnFX(other.x, other.y, '#4ade80', 5);
+          }
+        }
+      }
+    }
+    if (!tgt.isBoss && tgt.specialType === 'accelerator') {
+      tgt.accelTimer -= dt;
+      if (tgt.accelTimer <= 0) {
+        tgt.accelTimer = 4;
+        // Speed up all projectiles on screen
+        for (const p of projectiles) {
+          p.vx *= 1.4;
+          p.vy *= 1.4;
+          p.life *= 0.7;
+        }
+        flash(
+          '⚡ ' +
+            (currentLang === 'fr'
+              ? 'Projectiles accélérés!'
+              : 'Projectiles sped up!'),
+          '#38bdf8',
+        );
+      }
+    }
+    if (!tgt.isBoss && tgt.specialType === 'blocker') {
+      tgt.blockTimer -= dt;
+      if (tgt.blockTimer <= 0) {
+        tgt.blockTimer = 8;
+        // Block a random available spell for 10s
+        const spells = [
+          'shield',
+          'fire',
+          'lightning',
+          'poison',
+          'heal',
+          'freeze',
+        ];
+        const avail = spells.filter((s) => !isBlocked(s));
+        if (avail.length) {
+          const chosen = avail[Math.floor(Math.random() * avail.length)];
+          blockSpell(chosen, 10000);
+        }
       }
     }
     if (tgt.hp <= 0) {
@@ -1402,6 +1537,11 @@ function updateWave(dt) {
       tSpawnInt = Math.max(2, 6 - wave * 0.4);
       pInt = Math.max(1, BASE_PROJ_INT - wave * 0.15);
       document.getElementById('waveBadge').textContent = t('wave') + ' ' + wave;
+      if (wave > MAX_WAVE) {
+        // Victory after wave 20 (boss 4 killed)
+        victoryGame();
+        return;
+      }
       if (isBossWave(wave)) {
         // Boss wave: clear all regular targets and spawn boss
         targets.length = 0;
@@ -1478,10 +1618,31 @@ function drawTargets() {
   for (const tgt of targets) {
     const ratio = tgt.hp / tgt.maxHp;
     // Boss gets special colors — pulsing red/gold
-    let col;
+    let col,
+      icon = null;
     if (tgt.isBoss) {
       const pulse = 0.5 + Math.sin(Date.now() / 200) * 0.5;
       col = `rgb(255,${Math.round(80 + pulse * 60)},0)`;
+    } else if (tgt.specialType === 'bomb') {
+      const t2 = tgt.bombTimer || 0,
+        urgency =
+          t2 < 3 ? 0.5 + Math.sin(Date.now() / (100 + t2 * 30)) * 0.5 : 0;
+      col = tgt.frozen
+        ? '#7dd3fc'
+        : `rgb(255,${Math.round(80 - urgency * 80)},0)`;
+      icon = '💣';
+    } else if (tgt.specialType === 'healer') {
+      col = tgt.frozen ? '#7dd3fc' : '#4ade80';
+      icon = '💚';
+    } else if (tgt.specialType === 'accelerator') {
+      const pulse = 0.5 + Math.sin(Date.now() / 150) * 0.5;
+      col = tgt.frozen
+        ? '#7dd3fc'
+        : `rgb(${Math.round(56 + pulse * 100)},${Math.round(189 + pulse * 40)},248)`;
+      icon = '⚡';
+    } else if (tgt.specialType === 'blocker') {
+      col = tgt.frozen ? '#7dd3fc' : '#c084fc';
+      icon = '🔒';
     } else {
       col = tgt.frozen
         ? '#7dd3fc'
@@ -1551,27 +1712,65 @@ function drawTargets() {
       gCtx.shadowBlur = 0;
     }
     if (!tgt.isBoss) {
-      gCtx.lineWidth = 1;
-      gCtx.globalAlpha = 0.55;
-      gCtx.beginPath();
-      if (tgt.frozen) {
-        for (let _a = 0; _a < 6; _a++) {
-          const _ang = (_a * Math.PI) / 3;
-          gCtx.moveTo(tgt.x, tgt.y);
-          gCtx.lineTo(
-            tgt.x + Math.cos(_ang) * tgt.r * 0.52,
-            tgt.y + Math.sin(_ang) * tgt.r * 0.52,
-          );
-        }
-      } else {
-        gCtx.moveTo(tgt.x - tgt.r * 0.4, tgt.y);
-        gCtx.lineTo(tgt.x + tgt.r * 0.4, tgt.y);
-        gCtx.moveTo(tgt.x, tgt.y - tgt.r * 0.4);
-        gCtx.lineTo(tgt.x, tgt.y + tgt.r * 0.4);
+      // Icon for special enemies
+      if (icon) {
+        gCtx.save();
+        gCtx.globalAlpha = 1;
+        gCtx.shadowBlur = 0;
+        gCtx.font = `${Math.round(tgt.r * 0.75)}px serif`;
+        gCtx.textAlign = 'center';
+        gCtx.textBaseline = 'middle';
+        gCtx.fillStyle = '#fff';
+        gCtx.fillText(icon, tgt.x, tgt.y);
+        gCtx.restore();
       }
-      gCtx.strokeStyle = col;
-      gCtx.stroke();
-      gCtx.globalAlpha = 1;
+      // Bomb countdown timer
+      if (tgt.specialType === 'bomb' && tgt.bombArmed) {
+        gCtx.save();
+        gCtx.font = 'bold 10px Orbitron,sans-serif';
+        gCtx.textAlign = 'center';
+        gCtx.textBaseline = 'top';
+        gCtx.fillStyle = '#fff';
+        gCtx.fillText(Math.ceil(tgt.bombTimer) + 's', tgt.x, tgt.y + tgt.r + 2);
+        gCtx.restore();
+      }
+      // Healer radius ring (subtle)
+      if (tgt.specialType === 'healer') {
+        gCtx.save();
+        gCtx.globalAlpha = 0.08;
+        gCtx.beginPath();
+        gCtx.arc(tgt.x, tgt.y, 400, 0, Math.PI * 2);
+        gCtx.strokeStyle = '#4ade80';
+        gCtx.lineWidth = 1;
+        gCtx.setLineDash([6, 6]);
+        gCtx.stroke();
+        gCtx.setLineDash([]);
+        gCtx.restore();
+      }
+      // Cross/snowflake pattern (skip for specials — icon is enough)
+      if (!tgt.specialType) {
+        gCtx.lineWidth = 1;
+        gCtx.globalAlpha = 0.55;
+        gCtx.beginPath();
+        if (tgt.frozen) {
+          for (let _a = 0; _a < 6; _a++) {
+            const _ang = (_a * Math.PI) / 3;
+            gCtx.moveTo(tgt.x, tgt.y);
+            gCtx.lineTo(
+              tgt.x + Math.cos(_ang) * tgt.r * 0.52,
+              tgt.y + Math.sin(_ang) * tgt.r * 0.52,
+            );
+          }
+        } else {
+          gCtx.moveTo(tgt.x - tgt.r * 0.4, tgt.y);
+          gCtx.lineTo(tgt.x + tgt.r * 0.4, tgt.y);
+          gCtx.moveTo(tgt.x, tgt.y - tgt.r * 0.4);
+          gCtx.lineTo(tgt.x, tgt.y + tgt.r * 0.4);
+        }
+        gCtx.strokeStyle = col;
+        gCtx.stroke();
+        gCtx.globalAlpha = 1;
+      }
     }
   }
 }
@@ -1921,6 +2120,7 @@ function gameLoop(ts) {
   gameTime = (Date.now() - startTime) / 1000;
   updateWave(dt);
   updateTargets(dt);
+  updateBlockedSpells();
   updateProjectiles(dt);
   updateDrops(dt);
   updateParticles(dt);
@@ -1962,13 +2162,22 @@ function updateHUD() {
     const left = cdLeft(s),
       el = document.getElementById('cd-' + s),
       slot = document.getElementById('slot-' + s);
-    if (left > 0) {
+    const blocked = isBlocked(s);
+    if (blocked) {
+      const bleft = Math.ceil((blockedSpells[s] - Date.now()) / 1000);
+      el.textContent = '🔒' + bleft;
+      el.classList.remove('done');
+      slot.classList.remove('ready');
+      slot.classList.add('blocked');
+    } else if (left > 0) {
       el.textContent = Math.ceil(left / 1000);
       el.classList.remove('done');
       slot.classList.remove('ready');
+      slot.classList.remove('blocked');
     } else {
       el.classList.add('done');
       slot.classList.add('ready');
+      slot.classList.remove('blocked');
     }
   }
 }
@@ -2257,6 +2466,7 @@ function startGame() {
   levelKills = 0;
   bossActive = false;
   bossSpawnPending = false;
+  blockedSpells = {};
   handLost = false;
   _handLostTimer = 0;
   document.getElementById('hand-lost-overlay').style.display = 'none';
@@ -2296,6 +2506,35 @@ function startGame() {
   raf = requestAnimationFrame(gameLoop);
   for (let i = 0; i < 3; i++) setTimeout(spawnTarget, i * 600);
   announceWave(true);
+}
+function victoryGame() {
+  gameState = STATE.GAMEOVER; // reuse gameover screen
+  cancelAnimationFrame(raf);
+  stopSpeech();
+  stopPoison();
+  stopMusic();
+  ['hud', 'spellsBar', 'gestureBadge', 'waveBadge', 'hpWrap'].forEach((id) =>
+    document.getElementById(id).classList.add('hidden'),
+  );
+  const isRec = score > bestScore;
+  if (isRec) {
+    bestScore = score;
+    localStorage.setItem('spellstorm_best', bestScore);
+  }
+  const secs = Math.floor(gameTime);
+  document.getElementById('go-title').textContent =
+    currentLang === 'fr' ? '🏆 VICTOIRE !' : '🏆 VICTORY!';
+  document.getElementById('go-title').className = 'go-title new-record';
+  document.getElementById('go-record').className = 'go-record-badge show';
+  document.getElementById('go-record').textContent =
+    currentLang === 'fr' ? '✦ BOSS 4 VAINCU ✦' : '✦ BOSS 4 DEFEATED ✦';
+  document.getElementById('go-score').textContent = score.toLocaleString();
+  document.getElementById('go-time').textContent =
+    Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+  document.getElementById('go-kills').textContent = kills;
+  document.getElementById('go-level').textContent = 'LVL ' + level;
+  document.getElementById('go-best').textContent = bestScore.toLocaleString();
+  showScreen('gameover');
 }
 function endGame() {
   gameState = STATE.GAMEOVER;

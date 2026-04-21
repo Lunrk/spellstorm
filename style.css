@@ -813,3 +813,23 @@ body {
     opacity: 1;
   }
 }
+
+/* Blocked spell slot */
+.spell-slot.blocked {
+  border-color: #c084fc !important;
+  box-shadow: 0 0 10px -2px #c084fc !important;
+  animation: blockedPulse 0.8s ease-in-out infinite;
+}
+.spell-slot.blocked .spell-cd-overlay {
+  background: rgba(192, 132, 252, 0.85) !important;
+  color: #fff;
+}
+@keyframes blockedPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
