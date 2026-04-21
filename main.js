@@ -969,7 +969,7 @@ function castFire() {
   for (const tgt of targets) {
     if (Math.hypot(tgt.x - pos.x, tgt.y - pos.y) < tgt.r + fireRad) {
       tgt.burning = true;
-      tgt.burnDps = 5 * level;
+      tgt.burnDps = 2.5 * level;
       tgt.burnTimer = 3 + level * 0.5;
       if (tgt.frozen) {
         tgt.frozen = false;
@@ -1162,7 +1162,7 @@ function updateSpellFX(dt) {
         let hit = false;
         for (const tgt of targets) {
           if (Math.hypot(tgt.x - fx.x, tgt.y - fx.y) < tgt.r + 8) {
-            tgt.hp -= 35 * level;
+            tgt.hp -= 18 * level;
             spawnFX(tgt.x, tgt.y, '#ffe066', 10);
             if (fx.bouncesLeft > 0) {
               fx.bouncesLeft--;
