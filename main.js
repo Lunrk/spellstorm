@@ -884,41 +884,14 @@ function projColor(p) {
 function updateProjectiles(dt) {
   const W = gameCanvas.width,
     H = gameCanvas.height;
-  // Find boss once per frame for absorption check
-  const boss = bossActive ? targets.find((t) => t.isBoss) : null;
-  const ABSORB_RADIUS = 120; // px — boss pulls projectiles within this range
-  const ABSORB_HEAL = 10; // HP healed per absorbed projectile
-
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
-
-    // Boss absorption — pull nearby projectiles toward boss and absorb them
-    if (boss) {
-      const dx = boss.x - p.x,
-        dy = boss.y - p.y,
-        dist = Math.hypot(dx, dy);
-      if (dist < ABSORB_RADIUS) {
-        // Attract toward boss
-        const pull = ((ABSORB_RADIUS - dist) / ABSORB_RADIUS) * 3.5;
-        p.vx += (dx / dist) * pull;
-        p.vy += (dy / dist) * pull;
-        // Absorb if close enough
-        if (dist < boss.r + p.r) {
-          boss.hp = Math.min(boss.maxHp, boss.hp + ABSORB_HEAL);
-          spawnFX(boss.x, boss.y, '#f97316', 4); // small orange burst on boss
-          projectiles.splice(i, 1);
-          continue;
-        }
-      }
-    }
-
     p.x += p.vx * dt * 60;
     p.y += p.vy * dt * 60;
     p.age += dt;
     p.life -= dt;
     if (p.life <= 0) {
       if (p.age / p.maxLife >= 0.4) {
-        // Projectiles deal more damage during boss waves
         const dmg = bossActive
           ? Math.min(25, (8 + wave * 2) | 0)
           : Math.min(15, (5 + wave * 1.5) | 0);
@@ -1313,6 +1286,14 @@ function updatePoisonTrail(dt) {
 function takeDamage(amount) {
   hp -= amount;
   sndDamage();
+  // Boss regens when it damages the player: +20 × wave HP per hit
+  if (bossActive) {
+    const boss = targets.find((t) => t.isBoss);
+    if (boss) {
+      boss.hp = Math.min(boss.maxHp, boss.hp + 20 * wave);
+      spawnFX(boss.x, boss.y, '#f97316', 3);
+    }
+  }
   if (hp <= 0) {
     hp = 0;
     endGame();
@@ -1347,7 +1328,7 @@ function spawnBoss() {
   const W = gameCanvas.width,
     H = gameCanvas.height;
   const r = 55 + wave * 2; // big boi
-  const hp = 200 + wave * 800;
+  const hp = 200 + wave * 400;
   const spd = (0.5 + wave * 0.08) * (0.9 + Math.random() * 0.2);
   // Spawn from top center for dramatic entrance
   const x = W / 2 + (Math.random() - 0.5) * 100,
