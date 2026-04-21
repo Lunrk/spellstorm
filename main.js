@@ -91,25 +91,27 @@ let bestScore = parseInt(localStorage.getItem('spellstorm_best') || '0');
 let bestCombo = 1,
   raf = null;
 
-/* ── COMBO ────────────────────────────────────────────────────── */
+/* ── LEVEL ─────────────────────────────────────────────────────── */
+// combo = level. Kills to next level: level*4+2  (L1=6, L2=10, L3=14, L4=18...)
 let combo = 1,
   comboKills = 0;
-const COMBO_PER_LEVEL = 3,
-  COMBO_MAX = 4;
+function killsForLevel(lvl) {
+  return lvl * 4 + 2;
+}
 function addKill() {
   kills++;
   comboKills++;
-  if (comboKills >= COMBO_PER_LEVEL && combo < COMBO_MAX) {
+  if (comboKills >= killsForLevel(combo)) {
     combo++;
     comboKills = 0;
     if (combo > bestCombo) bestCombo = combo;
+    hp = 100; // full heal on level-up
     showComboUp();
   }
   score += 100 * combo;
 }
 function breakCombo() {
-  combo = 1;
-  comboKills = 0;
+  /* levels never reset */
 }
 
 /* ── ENTITIES ─────────────────────────────────────────────────── */
@@ -2308,7 +2310,6 @@ function showComboUp() {
     '⬆️ LEVEL ' + combo + '!',
     combo >= 4 ? '#f97316' : combo >= 3 ? '#f59e0b' : '#38bdf8',
   );
-  sndComboUp(); // already called in addKill path
   sndComboUp();
 }
 function announceWave(silent) {
