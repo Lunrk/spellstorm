@@ -6,12 +6,12 @@
 const LANG = {
   en: {
     spells: {
-      shield: 'shield',
-      fire: 'fire',
-      lightning: 'lightning',
-      poison: 'poison',
-      heal: 'heal',
-      freeze: 'freeze',
+      shield: ['shield', 'protect', 'barrier'],
+      fire: ['fire', 'burn', 'ignite', 'flame'],
+      lightning: ['lightning', 'thunder', 'bolt', 'zap'],
+      poison: ['poison', 'toxic', 'venom'],
+      heal: ['heal', 'health', 'cure', 'restore'],
+      freeze: ['freeze', 'ice', 'frost', 'cold'],
     },
     ui: {
       shield: 'SHIELD',
@@ -19,6 +19,7 @@ const LANG = {
       lightning: 'LIGHTNING',
       poison: 'POISON',
       freeze: 'FREEZE',
+      heal: 'HEAL',
       gesture_pointing: 'POINTING',
       gesture_open: 'OPEN HAND',
       wave: 'WAVE',
@@ -28,19 +29,20 @@ const LANG = {
   },
   fr: {
     spells: {
-      shield: 'bouclier',
-      fire: 'feu',
-      lightning: 'éclair',
-      poison: 'poison',
-      heal: 'soin',
-      freeze: 'gel',
+      shield: ['bouclier', 'protection', 'barriere'],
+      fire: ['brulure', 'feu', 'flamme', 'bruler'],
+      lightning: ['eclair', 'foudre', 'tonnerre'],
+      poison: ['poison', 'toxique', 'venin'],
+      heal: ['soin', 'guerir', 'sante'],
+      freeze: ['gel', 'geler', 'glace', 'froid'],
     },
     ui: {
       shield: 'BOUCLIER',
-      fire: 'FEU',
+      fire: 'BRULURE',
       lightning: 'ÉCLAIR',
       poison: 'POISON',
       freeze: 'GEL',
+      heal: 'SOIN',
       gesture_pointing: 'POINTAGE',
       gesture_open: 'MAIN OUVERTE',
       wave: 'VAGUE',
@@ -54,7 +56,8 @@ function t(k) {
   return LANG[currentLang].ui[k] || k;
 }
 function tSpell(k) {
-  return LANG[currentLang].spells[k] || k;
+  const v = LANG[currentLang].spells[k];
+  return Array.isArray(v) ? v[0] : v || k;
 }
 
 /* ── BG MODE ──────────────────────────────────────────────────── */
@@ -932,7 +935,8 @@ function updateProjectiles(dt) {
     p.age += dt;
     p.life -= dt;
     if (p.life <= 0) {
-      if (p.age / p.maxLife >= 0.4) takeDamage(15);
+      if (p.age / p.maxLife >= 0.4)
+        takeDamage(Math.min(15, (5 + wave * 1.5) | 0));
       spawnFX(p.x, p.y, '#f87171', 6);
       projectiles.splice(i, 1);
       continue;
@@ -1005,7 +1009,7 @@ function castFire() {
   const pos = n2c(indexTip.x, indexTip.y);
   let hit = false;
   for (const tgt of targets) {
-    if (Math.hypot(tgt.x - pos.x, tgt.y - pos.y) < tgt.r + 14) {
+    if (Math.hypot(tgt.x - pos.x, tgt.y - pos.y) < tgt.r + 60) {
       triggerCD('fire');
       tgt.burning = true;
       tgt.burnDps = 5 * combo;
@@ -1893,10 +1897,12 @@ function initSpeech() {
     for (let i = e.resultIndex; i < e.results.length; i++)
       for (let a = 0; a < e.results[i].length; a++) {
         const tx = e.results[i][a].transcript.trim().toLowerCase();
-        const spellEntries = Object.entries(LANG[currentLang].spells).sort(
-          (a, b) => b[1].length - a[1].length,
-        );
-        for (const [k, w] of spellEntries) {
+        // Build flat list of {key, word} sorted by word length desc
+        const spellEntries = [];
+        for (const [k, words] of Object.entries(LANG[currentLang].spells))
+          for (const w of words) spellEntries.push({ k, w });
+        spellEntries.sort((a, b) => b.w.length - a.w.length);
+        for (const { k, w } of spellEntries) {
           if (tx.includes(w)) {
             const now = Date.now();
             if (now - (scd[k] || 0) < 1500) continue;
@@ -2165,24 +2171,30 @@ function updateRulesText() {
     ? 'START'
     : 'JOUER';
   const texts = {
+    'r-shield-name': en ? 'SHIELD' : 'BOUCLIER',
+    'r-fire-name': en ? 'FIRE' : 'BRULURE',
+    'r-lightning-name': en ? 'LIGHTNING' : 'ÉCLAIR',
+    'r-poison-name': en ? 'POISON' : 'POISON',
+    'r-freeze-name': en ? 'FREEZE' : 'GEL',
+    'r-heal-title': en ? '💚 HEAL' : '💚 SOIN',
     'r-shield-desc': en
-      ? 'Open hand + say "shield". Destroys projectiles near your palm.'
-      : 'Main ouverte + dire "bouclier". Détruit les projectiles proches.',
+      ? 'Open hand + say "shield" (or protect/barrier). Destroys projectiles near your palm.'
+      : 'Main ouverte + dire "bouclier" (ou protection/barriere). Détruit les projectiles proches.',
     'r-fire-desc': en
       ? 'Point fingertip ON a target + say "fire". Ignites it with magic flame.'
       : 'Bout du doigt SUR la cible + dire "feu". Enflamme la cible.',
     'r-lightning-desc': en
-      ? 'Point + say "lightning". Bounces off targets & walls. More bounces with higher combo.'
-      : 'Pointer + dire "éclair". Rebondit sur cibles/murs. Plus de rebonds avec le combo.',
+      ? 'Point + say "lightning" (or thunder/bolt/zap). Bounces off targets & walls. More bounces with higher combo.'
+      : 'Pointer + dire "eclair" (ou foudre/tonnerre). Rebondit sur cibles/murs. Plus de rebonds avec le combo.',
     'r-poison-desc': en
-      ? 'Say "poison" to activate a toxic trail wherever your hand moves. Costs HP (reduced by combo). Recast or use another spell to interrupt.'
-      : 'Dire "poison" pour activer une traînée toxique. Coûte des PV (réduit par combo). Relancer ou autre sort pour interrompre.',
+      ? 'Say "poison" (or toxic/venom). Toxic trail wherever your hand moves. Costs HP (reduced by combo). Recast or use another spell to stop.'
+      : 'Dire "poison" (ou toxique/venin). Traînée toxique partout. Coûte des PV (réduit par combo). Relancer ou autre sort pour stopper.',
     'r-heal-desc': en
-      ? 'Say "heal" to collect green drops from killed targets.'
-      : 'Dire "soin" pour ramasser les drops verts.',
+      ? 'Say "heal" (or health/cure/restore) to collect green drops from killed targets.'
+      : 'Dire "soin" (ou guerir/sante) pour ramasser les drops verts.',
     'r-freeze-desc': en
-      ? 'Open hand + say "freeze". Freezes nearby targets 5s — they stop and take +30% damage. Scales with combo.'
-      : 'Main ouverte + dire "gel". Gèle les cibles proches 5s — immobilisées et +30% dégâts reçus. Scale avec le combo.',
+      ? 'Open hand + say "freeze" (or ice/frost/cold). Freezes nearby targets 5s — they stop and take +30% damage. Scales with combo.'
+      : 'Main ouverte + dire "gel" (ou geler/glace/froid). Gèle les cibles proches 5s — immobilisées et +30% dégâts reçus. Scale avec le combo.',
     'r-combo-desc': en
       ? 'Kill 3 without taking damage → ×2, ×3, ×4. Damage resets. Higher combo = stronger spells.'
       : '3 kills sans dégâts → ×2, ×3, ×4. Dégâts = reset. Combo = sorts plus forts.',
@@ -2193,11 +2205,26 @@ function updateRulesText() {
       ? 'Voice requires Chrome or Edge. Allow camera & microphone.'
       : 'Voix : Chrome ou Edge. Autoriser caméra et micro.',
   };
-  for (const [id, txt] of Object.entries(texts))
-    document.getElementById(id).textContent = txt;
-  for (const s of ['shield', 'fire', 'lightning', 'poison', 'freeze'])
-    document.getElementById('r-' + s + '-cmd').textContent =
-      '"' + tSpell(s) + '"';
+  for (const [id, txt] of Object.entries(texts)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  }
+  // Show all aliases in voice-cmd badges
+  for (const s of ['shield', 'fire', 'lightning', 'poison', 'freeze']) {
+    const el = document.getElementById('r-' + s + '-cmd');
+    if (!el) continue;
+    const words = LANG[currentLang].spells[s];
+    el.textContent = words.map((w) => '"' + w + '"').join('  /  ');
+  }
+  // Heal aliases in misc section title
+  const healWords = LANG[currentLang].spells['heal'];
+  const healEl = document.getElementById('r-heal-title');
+  if (healEl)
+    healEl.textContent =
+      '💚 ' +
+      (en ? 'HEAL' : 'SOIN') +
+      ' — ' +
+      healWords.map((w) => '"' + w + '"').join(' / ');
   document.getElementById('rules-title').textContent = en
     ? 'HOW TO PLAY'
     : 'COMMENT JOUER';
