@@ -2908,6 +2908,10 @@ function updateRulesText() {
     'r-freeze-desc': en
       ? 'Open hand + say "freeze" (or ice/frost/cold). Freezes nearby targets 5s — they stop and take +30% damage. Scales with level.'
       : 'Main ouverte + dire "gel" (ou geler/glace/froid). Gèle les cibles proches 5s — +30% dégâts reçus. Scale avec le niveau.',
+    'r-blackhole-name': en ? 'BLACK HOLE' : 'TROU NOIR',
+    'r-blackhole-desc': en
+      ? 'Point + say "blackhole" (or void/vortex). Summons a vortex at your fingertip that pulls all enemies toward its center. Deals light damage. Combine with fire for best effect.'
+      : 'Pointer + dire "trou noir" (ou vortex/neant). Invoque un vortex au bout du doigt qui attire tous les ennemis vers son centre. Fait de légers dégâts. Combiner avec le feu pour un effet dévastateur.',
     'r-level-desc': en
       ? 'Kill enemies to level up. Each level-up fully heals you and powers up your spells.'
       : 'Tuez des ennemis pour monter de niveau. Chaque montée vous soigne à fond et renforce vos sorts.',
@@ -2926,7 +2930,14 @@ function updateRulesText() {
     const el = document.getElementById(id);
     if (el) el.textContent = txt;
   }
-  for (const s of ['shield', 'fire', 'lightning', 'poison', 'freeze']) {
+  for (const s of [
+    'shield',
+    'fire',
+    'lightning',
+    'poison',
+    'freeze',
+    'blackhole',
+  ]) {
     const el = document.getElementById('r-' + s + '-cmd');
     if (!el) continue;
     const words = LANG[currentLang].spells[s];
