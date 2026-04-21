@@ -157,6 +157,8 @@ let indexTip = null,
 let poisonActive = false,
   _poisonTimeout = null;
 let handLost = false; // true when hand is off-screen during gameplay
+const HAND_LOST_DELAY = 1.2; // seconds before overlay appears — increase to be less sensitive
+let _handLostTimer = 0; // counts up while hand is missing
 let _pGesture = 'NONE',
   _pFrames = 0,
   _sGesture = 'NONE',
@@ -882,19 +884,46 @@ function projColor(p) {
 function updateProjectiles(dt) {
   const W = gameCanvas.width,
     H = gameCanvas.height;
+  // Find boss once per frame for absorption check
+  const boss = bossActive ? targets.find((t) => t.isBoss) : null;
+  const ABSORB_RADIUS = 120; // px — boss pulls projectiles within this range
+  const ABSORB_HEAL = 8; // HP healed per absorbed projectile
+
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
+
+    // Boss absorption — pull nearby projectiles toward boss and absorb them
+    if (boss) {
+      const dx = boss.x - p.x,
+        dy = boss.y - p.y,
+        dist = Math.hypot(dx, dy);
+      if (dist < ABSORB_RADIUS) {
+        // Attract toward boss
+        const pull = ((ABSORB_RADIUS - dist) / ABSORB_RADIUS) * 3.5;
+        p.vx += (dx / dist) * pull;
+        p.vy += (dy / dist) * pull;
+        // Absorb if close enough
+        if (dist < boss.r + p.r) {
+          boss.hp = Math.min(boss.maxHp, boss.hp + ABSORB_HEAL);
+          spawnFX(boss.x, boss.y, '#f97316', 4); // small orange burst on boss
+          projectiles.splice(i, 1);
+          continue;
+        }
+      }
+    }
+
     p.x += p.vx * dt * 60;
     p.y += p.vy * dt * 60;
     p.age += dt;
     p.life -= dt;
     if (p.life <= 0) {
-      if (p.age / p.maxLife >= 0.4)
-        takeDamage(
-          p.isBossProj
-            ? Math.min(25, (8 + wave * 2) | 0)
-            : Math.min(15, (5 + wave * 1.5) | 0),
-        );
+      if (p.age / p.maxLife >= 0.4) {
+        // Projectiles deal more damage during boss waves
+        const dmg = bossActive
+          ? Math.min(25, (8 + wave * 2) | 0)
+          : Math.min(15, (5 + wave * 1.5) | 0);
+        takeDamage(dmg);
+      }
       spawnFX(p.x, p.y, '#f87171', 6);
       projectiles.splice(i, 1);
       continue;
@@ -1162,7 +1191,7 @@ function updateSpellFX(dt) {
         let hit = false;
         for (const tgt of targets) {
           if (Math.hypot(tgt.x - fx.x, tgt.y - fx.y) < tgt.r + 8) {
-            tgt.hp -= 18 * level;
+            tgt.hp -= fx.bouncesLeft < level ? 18 * level * 0.5 : 18 * level;
             spawnFX(tgt.x, tgt.y, '#ffe066', 10);
             if (fx.bouncesLeft > 0) {
               fx.bouncesLeft--;
@@ -1307,7 +1336,7 @@ let tSpawnTimer = 0,
 /* ── BOSS ─────────────────────────────────────────────────────── */
 let bossActive = false,
   bossSpawnPending = false;
-let bossShootTimer = 0;
+
 const BOSS_WAVE = 5; // boss every 5 waves
 
 function isBossWave(w) {
@@ -1318,7 +1347,7 @@ function spawnBoss() {
   const W = gameCanvas.width,
     H = gameCanvas.height;
   const r = 55 + wave * 2; // big boi
-  const hp = 200 + wave * 80;
+  const hp = 200 + wave * 1600;
   const spd = (0.5 + wave * 0.08) * (0.9 + Math.random() * 0.2);
   // Spawn from top center for dramatic entrance
   const x = W / 2 + (Math.random() - 0.5) * 100,
@@ -1349,7 +1378,6 @@ function spawnBoss() {
   });
   bossActive = true;
   bossSpawnPending = false;
-  bossShootTimer = 2; // first shot after 2s
   // Dramatic announcement
   announceBoss();
 }
@@ -1419,30 +1447,15 @@ function updateWave(dt) {
     pSpawnTimer = Math.max(0.8, pInt / Math.max(1, targets.length * 0.4));
     spawnProjectile();
   }
-  // Boss shoots extra projectiles
+  // During boss wave: spawn projectiles more aggressively
   if (bossActive) {
-    bossShootTimer -= dt;
-    if (bossShootTimer <= 0) {
-      bossShootTimer = Math.max(0.8, 2.5 - wave * 0.08);
-      // Fire 3 projectiles in spread from boss position
-      const boss = targets.find((t) => t.isBoss);
-      if (boss) {
-        for (let i = -1; i <= 1; i++) {
-          const angle = Math.PI / 2 + i * (Math.PI / 8); // downward spread
-          const spd = 2 + wave * 0.15;
-          projectiles.push({
-            x: boss.x,
-            y: boss.y,
-            r: 10,
-            vx: Math.cos(angle) * spd,
-            vy: Math.sin(angle) * spd,
-            life: 8,
-            maxLife: 8,
-            age: 0,
-            isBossProj: true,
-          });
-        }
-      }
+    pSpawnTimer -= dt;
+    if (pSpawnTimer <= 0) {
+      pSpawnTimer = Math.max(
+        0.4,
+        (pInt * 0.4) / Math.max(1, targets.length * 0.3),
+      );
+      spawnProjectile();
     }
   }
 }
@@ -1583,9 +1596,7 @@ function drawTargets() {
 }
 function drawProjectiles() {
   for (const p of projectiles) {
-    const col = p.isBossProj
-      ? `rgb(255,${Math.round(80 + Math.sin(p.age * 8) * 40)},0)`
-      : projColor(p);
+    const col = projColor(p);
     const pulse = 0.7 + Math.sin(p.age * 6) * 0.3;
     gCtx.save();
     gCtx.shadowBlur = (p.isBossProj ? 28 : 14) * pulse;
@@ -2204,11 +2215,15 @@ function onHandResults(results) {
     indexDir = null;
     palmCenter = null;
     updateGestureBadge();
-    if (gameState === STATE.PLAYING) showHandLost();
+    if (gameState === STATE.PLAYING) {
+      _handLostTimer += 1 / 30; // MediaPipe runs ~30fps — increment by one frame
+      if (_handLostTimer >= HAND_LOST_DELAY) showHandLost();
+    }
     return;
   }
   const lm = results.multiHandLandmarks[0];
   handLandmarks = lm;
+  _handLostTimer = 0;
   if (gameState === STATE.PLAYING && handLost) hideHandLost();
   const W = gameCanvas.width,
     H = gameCanvas.height;
@@ -2261,8 +2276,8 @@ function startGame() {
   levelKills = 0;
   bossActive = false;
   bossSpawnPending = false;
-  bossShootTimer = 0;
   handLost = false;
+  _handLostTimer = 0;
   document.getElementById('hand-lost-overlay').style.display = 'none';
   targets = [];
   projectiles = [];
