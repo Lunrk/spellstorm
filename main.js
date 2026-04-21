@@ -119,7 +119,8 @@ let targets = [],
   drops = [],
   particles = [],
   spellFX = [],
-  poisonTrail = [];
+  poisonTrail = [],
+  dmgNumbers = [];
 
 /* ── COOLDOWNS ────────────────────────────────────────────────── */
 const CD = {
@@ -851,12 +852,24 @@ function updateTargets(dt) {
     if (tgt.burning) {
       tgt.burnTimer -= dt;
       const dm = 1 + (tgt.freezeDmgBonus || 0);
-      tgt.hp -= tgt.burnDps * dm * dt;
+      const fireDmg = tgt.burnDps * dm * dt;
+      tgt.hp -= fireDmg;
+      tgt._fireDmgAcc = (tgt._fireDmgAcc || 0) + fireDmg;
+      if (tgt._fireDmgAcc >= 5) {
+        spawnDmg(tgt.x, tgt.y, tgt._fireDmgAcc, '#ff6b2b');
+        tgt._fireDmgAcc = 0;
+      }
       if (tgt.burnTimer <= 0) tgt.burning = false;
     }
     if (tgt.poisoned) {
       tgt.poisonTimer -= dt;
-      tgt.hp -= 8 * level * dt;
+      const poisDmg = 8 * level * dt;
+      tgt.hp -= poisDmg;
+      tgt._poisDmgAcc = (tgt._poisDmgAcc || 0) + poisDmg;
+      if (tgt._poisDmgAcc >= 5) {
+        spawnDmg(tgt.x, tgt.y, tgt._poisDmgAcc, '#a855f7');
+        tgt._poisDmgAcc = 0;
+      }
       if (tgt.poisonTimer <= 0) tgt.poisoned = false;
     }
     if (tgt.frozen) {
@@ -1299,7 +1312,9 @@ function updateSpellFX(dt) {
         let hit = false;
         for (const tgt of targets) {
           if (Math.hypot(tgt.x - fx.x, tgt.y - fx.y) < tgt.r + 8) {
-            tgt.hp -= fx.bouncesLeft < level ? 18 * level * 0.5 : 18 * level;
+            const ldmg = fx.bouncesLeft < level ? 18 * level * 0.5 : 18 * level;
+            tgt.hp -= ldmg;
+            spawnDmg(tgt.x, tgt.y, ldmg, '#ffe066');
             spawnFX(tgt.x, tgt.y, '#ffe066', 10);
             if (fx.bouncesLeft > 0) {
               fx.bouncesLeft--;
@@ -1366,6 +1381,20 @@ function spawnFX(x, y, color, n) {
     });
   }
 }
+// Spawn a floating damage number at (x,y)
+function spawnDmg(x, y, amount, color) {
+  dmgNumbers.push({
+    x: x + (Math.random() - 0.5) * 20,
+    y: y,
+    vy: -(1.2 + Math.random() * 0.8), // float upward
+    text: '-' + Math.round(amount),
+    color,
+    life: 1.0,
+    maxLife: 1.0,
+    size: Math.min(22, 12 + Math.round(amount / 8)), // bigger = more damage
+  });
+}
+
 function spawnFireParts(x, y) {
   for (let i = 0; i < 12; i++) {
     const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.2,
@@ -1383,6 +1412,15 @@ function spawnFireParts(x, y) {
     });
   }
 }
+function updateDmgNumbers(dt) {
+  for (let i = dmgNumbers.length - 1; i >= 0; i--) {
+    const n = dmgNumbers[i];
+    n.y += n.vy * dt * 60;
+    n.life -= dt;
+    if (n.life <= 0) dmgNumbers.splice(i, 1);
+  }
+}
+
 function updateParticles(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
@@ -1463,7 +1501,7 @@ function spawnBoss() {
   const W = gameCanvas.width,
     H = gameCanvas.height;
   const r = 55 + wave * 2; // big boi
-  const hp = 200 + wave * 400;
+  const hp = 200 + wave * 200;
   const spd = (0.5 + wave * 0.08) * (0.9 + Math.random() * 0.2);
   // Spawn from top center for dramatic entrance
   const x = W / 2 + (Math.random() - 0.5) * 100,
@@ -1828,6 +1866,22 @@ function drawPoisonTrail() {
     gCtx.restore();
   }
 }
+function drawDmgNumbers() {
+  for (const n of dmgNumbers) {
+    const alpha = n.life / n.maxLife;
+    gCtx.save();
+    gCtx.globalAlpha = alpha;
+    gCtx.shadowBlur = 6;
+    gCtx.shadowColor = n.color;
+    gCtx.fillStyle = n.color;
+    gCtx.font = `bold ${n.size}px Orbitron,sans-serif`;
+    gCtx.textAlign = 'center';
+    gCtx.textBaseline = 'middle';
+    gCtx.fillText(n.text, n.x, n.y);
+    gCtx.restore();
+  }
+}
+
 function drawParticles() {
   for (const p of particles) {
     gCtx.save();
@@ -2124,6 +2178,7 @@ function gameLoop(ts) {
   updateProjectiles(dt);
   updateDrops(dt);
   updateParticles(dt);
+  updateDmgNumbers(dt);
   updatePoisonTrail(dt);
   updateSpellFX(dt);
   if (hp <= 0) {
@@ -2137,6 +2192,7 @@ function gameLoop(ts) {
   drawProjectiles();
   drawParticles();
   drawSpellFX();
+  drawDmgNumbers();
   drawHands();
   updateHUD();
   raf = requestAnimationFrame(gameLoop);
@@ -2476,6 +2532,7 @@ function startGame() {
   particles = [];
   spellFX = [];
   poisonTrail = [];
+  dmgNumbers = [];
   stopPoison();
   for (const k of Object.keys(cdTimer)) cdTimer[k] = 0;
   tSpawnTimer = 2;
