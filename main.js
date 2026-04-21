@@ -887,7 +887,7 @@ function updateProjectiles(dt) {
   // Find boss once per frame for absorption check
   const boss = bossActive ? targets.find((t) => t.isBoss) : null;
   const ABSORB_RADIUS = 120; // px — boss pulls projectiles within this range
-  const ABSORB_HEAL = 8; // HP healed per absorbed projectile
+  const ABSORB_HEAL = 10; // HP healed per absorbed projectile
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
@@ -1347,7 +1347,7 @@ function spawnBoss() {
   const W = gameCanvas.width,
     H = gameCanvas.height;
   const r = 55 + wave * 2; // big boi
-  const hp = 200 + wave * 1600;
+  const hp = 200 + wave * 800;
   const spd = (0.5 + wave * 0.08) * (0.9 + Math.random() * 0.2);
   // Spawn from top center for dramatic entrance
   const x = W / 2 + (Math.random() - 0.5) * 100,
