@@ -1415,7 +1415,7 @@ function updateWave(dt) {
   // Freeze wave timer while boss is alive
   if (!bossActive) {
     waveTimer += dt;
-    if (waveTimer >= 45) {
+    if (waveTimer >= 35) {
       waveTimer = 0;
       wave++;
       tSpawnInt = Math.max(2, 6 - wave * 0.4);
