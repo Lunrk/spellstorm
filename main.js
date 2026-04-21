@@ -1854,7 +1854,9 @@ function initSpeech() {
   };
   recognition.onresult = (e) => {
     document.getElementById('micDot').classList.add('active');
-    for (let i = e.resultIndex; i < e.results.length; i++)
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      // Only act on final results for pause/resume — avoids double-trigger from interim
+      const isFinal = e.results[i].isFinal;
       for (let a = 0; a < e.results[i].length; a++) {
         const norm = (s) =>
           s
@@ -1865,21 +1867,43 @@ function initSpeech() {
         const spellEntries = [];
         for (const [k, words] of Object.entries(LANG[currentLang].spells))
           for (const w of words) spellEntries.push({ k, w: norm(w) });
-        // Check pause/resume first
-        const pauseWords =
-          currentLang === 'fr' ? ['pause', 'reprendre'] : ['pause', 'resume'];
-        if (tx.includes(pauseWords[0]) && gameState === STATE.PLAYING) {
-          pauseGame();
-          return;
+        // Pause/resume — final results only + debounce 2s
+        if (isFinal) {
+          const pauseTriggers =
+            currentLang === 'fr'
+              ? ['pause', 'stop', 'reprendre']
+              : ['pause', 'stop', 'resume'];
+          const now = Date.now();
+          if (
+            (tx.includes(pauseTriggers[0]) || tx.includes(pauseTriggers[1])) &&
+            gameState === STATE.PLAYING &&
+            now - (scd['_pause'] || 0) > 2000
+          ) {
+            scd['_pause'] = now;
+            pauseGame();
+            break;
+          }
+          if (
+            tx.includes(pauseTriggers[2]) &&
+            gameState === STATE.PAUSED &&
+            now - (scd['_pause'] || 0) > 2000
+          ) {
+            scd['_pause'] = now;
+            resumeGame();
+            break;
+          }
+          // "pause" also resumes if already paused (toggle)
+          if (
+            (tx.includes('pause') || tx.includes('stop')) &&
+            gameState === STATE.PAUSED &&
+            now - (scd['_pause'] || 0) > 2000
+          ) {
+            scd['_pause'] = now;
+            resumeGame();
+            break;
+          }
         }
-        if (tx.includes(pauseWords[1]) && gameState === STATE.PAUSED) {
-          resumeGame();
-          return;
-        }
-        if (tx.includes('pause') && gameState === STATE.PAUSED) {
-          resumeGame();
-          return;
-        }
+        if (gameState !== STATE.PLAYING) continue;
         spellEntries.sort((a, b) => b.w.length - a.w.length);
         for (const { k, w } of spellEntries) {
           if (tx.includes(w)) {
@@ -1891,6 +1915,7 @@ function initSpeech() {
           }
         }
       }
+    }
     setTimeout(
       () => document.getElementById('micDot').classList.remove('active'),
       500,
