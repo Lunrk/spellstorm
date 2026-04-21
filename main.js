@@ -864,24 +864,41 @@ function updateTargets(dt) {
     }
     if (tgt.burning) {
       tgt.burnTimer -= dt;
-      const dm = 1 + (tgt.freezeDmgBonus || 0);
-      const fireDmg = tgt.burnDps * dm * dt;
-      tgt.hp -= fireDmg;
-      tgt._fireDmgAcc = (tgt._fireDmgAcc || 0) + fireDmg;
-      if (tgt._fireDmgAcc >= 5) {
-        spawnDmg(tgt.x, tgt.y, tgt._fireDmgAcc, '#ff6b2b');
-        tgt._fireDmgAcc = 0;
+      if (tgt.isBoss && tgt.immunity === 'fire') {
+        // immune — show text once per accumulation cycle
+        tgt._immuneFireAcc = (tgt._immuneFireAcc || 0) + dt;
+        if (tgt._immuneFireAcc >= 0.8) {
+          spawnImmune(tgt.x, tgt.y);
+          tgt._immuneFireAcc = 0;
+        }
+      } else {
+        const dm = 1 + (tgt.freezeDmgBonus || 0);
+        const fireDmg = tgt.burnDps * dm * dt;
+        tgt.hp -= fireDmg;
+        tgt._fireDmgAcc = (tgt._fireDmgAcc || 0) + fireDmg;
+        if (tgt._fireDmgAcc >= 5) {
+          spawnDmg(tgt.x, tgt.y, tgt._fireDmgAcc, '#ff6b2b');
+          tgt._fireDmgAcc = 0;
+        }
       }
       if (tgt.burnTimer <= 0) tgt.burning = false;
     }
     if (tgt.poisoned) {
       tgt.poisonTimer -= dt;
-      const poisDmg = 8 * level * dt;
-      tgt.hp -= poisDmg;
-      tgt._poisDmgAcc = (tgt._poisDmgAcc || 0) + poisDmg;
-      if (tgt._poisDmgAcc >= 5) {
-        spawnDmg(tgt.x, tgt.y, tgt._poisDmgAcc, '#a855f7');
-        tgt._poisDmgAcc = 0;
+      if (tgt.isBoss && tgt.immunity === 'poison') {
+        tgt._immunePoisAcc = (tgt._immunePoisAcc || 0) + dt;
+        if (tgt._immunePoisAcc >= 0.8) {
+          spawnImmune(tgt.x, tgt.y);
+          tgt._immunePoisAcc = 0;
+        }
+      } else {
+        const poisDmg = 8 * level * dt;
+        tgt.hp -= poisDmg;
+        tgt._poisDmgAcc = (tgt._poisDmgAcc || 0) + poisDmg;
+        if (tgt._poisDmgAcc >= 5) {
+          spawnDmg(tgt.x, tgt.y, tgt._poisDmgAcc, '#a855f7');
+          tgt._poisDmgAcc = 0;
+        }
       }
       if (tgt.poisonTimer <= 0) tgt.poisoned = false;
     }
@@ -1331,10 +1348,15 @@ function updateSpellFX(dt) {
         let hit = false;
         for (const tgt of targets) {
           if (Math.hypot(tgt.x - fx.x, tgt.y - fx.y) < tgt.r + 8) {
-            const ldmg = fx.bouncesLeft < level ? 18 * level * 0.5 : 18 * level;
-            tgt.hp -= ldmg;
-            spawnDmg(tgt.x, tgt.y, ldmg, '#ffe066');
-            spawnFX(tgt.x, tgt.y, '#ffe066', 10);
+            if (tgt.isBoss && tgt.immunity === 'lightning') {
+              spawnImmune(tgt.x, tgt.y);
+            } else {
+              const ldmg =
+                fx.bouncesLeft < level ? 18 * level * 0.5 : 18 * level;
+              tgt.hp -= ldmg;
+              spawnDmg(tgt.x, tgt.y, ldmg, '#ffe066');
+              spawnFX(tgt.x, tgt.y, '#ffe066', 10);
+            }
             if (fx.bouncesLeft > 0) {
               fx.bouncesLeft--;
               const next = targets.find((t2) => t2 !== tgt);
@@ -1399,6 +1421,19 @@ function spawnFX(x, y, color, n) {
       maxLife: l,
     });
   }
+}
+// Spawn a floating "IMMUNISÉ" text on the boss
+function spawnImmune(x, y) {
+  dmgNumbers.push({
+    x: x + (Math.random() - 0.5) * 30,
+    y: y - Math.random() * 20,
+    vy: -(0.6 + Math.random() * 0.4),
+    text: currentLang === 'fr' ? 'IMMUNISÉ' : 'IMMUNE',
+    color: '#94a3b8',
+    life: 0.9,
+    maxLife: 0.9,
+    size: 11,
+  });
 }
 // Spawn a floating damage number at (x,y)
 function spawnDmg(x, y, amount, color, isHeal = false) {
@@ -1533,6 +1568,8 @@ function spawnBoss() {
   const cx = W / 2,
     cy = H / 2;
   const dir = Math.atan2(cy - y, cx - x);
+  const dmgSpells = ['fire', 'lightning', 'poison'];
+  const immunity = dmgSpells[Math.floor(Math.random() * dmgSpells.length)];
   targets.push({
     x,
     y,
@@ -1553,21 +1590,35 @@ function spawnBoss() {
     freezeTimer: 0,
     freezeDmgBonus: 0,
     isBoss: true,
+    immunity,
   });
   bossActive = true;
   bossSpawnPending = false;
   // Dramatic announcement
-  announceBoss();
+  announceBoss(immunity);
 }
 
-function announceBoss() {
+function announceBoss(immunity) {
   const el = document.getElementById('waveAnnounce');
-  el.textContent = '⚠ BOSS ⚠';
+  const icons = { fire: '🔥', lightning: '⚡', poison: '☠️' };
+  el.textContent = '⚠ BOSS ⚠  immune ' + (icons[immunity] || '');
   el.style.color = '#f97316';
   el.style.animation = 'none';
   el.offsetHeight;
   el.style.animation = 'waveIn 3s ease forwards';
   sndWave();
+  // Also flash the immunity info
+  setTimeout(
+    () =>
+      flash(
+        '🛡 BOSS immune to ' +
+          (icons[immunity] || '') +
+          ' ' +
+          (immunity || '').toUpperCase(),
+        '#f97316',
+      ),
+    1600,
+  );
 }
 
 function onBossDeath() {
@@ -1763,7 +1814,7 @@ function drawTargets() {
     gCtx.roundRect(bx, by, bw * ratio, tgt.isBoss ? 6 : 4, 2);
     gCtx.fill();
     if (tgt.isBoss) {
-      // BOSS label above HP bar
+      // BOSS label + immunity badge above HP bar
       gCtx.font = 'bold 11px Orbitron,sans-serif';
       gCtx.textAlign = 'center';
       gCtx.textBaseline = 'bottom';
@@ -1772,6 +1823,12 @@ function drawTargets() {
       gCtx.shadowColor = '#f97316';
       gCtx.fillText('BOSS', tgt.x, by - 2);
       gCtx.shadowBlur = 0;
+      if (tgt.immunity) {
+        const icons = { fire: '🔥', lightning: '⚡', poison: '☠️' };
+        gCtx.font = '10px Orbitron,sans-serif';
+        gCtx.fillStyle = '#94a3b8';
+        gCtx.fillText('immune ' + (icons[tgt.immunity] || ''), tgt.x, by - 14);
+      }
     }
     if (!tgt.isBoss) {
       // Icon for special enemies
