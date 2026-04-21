@@ -153,8 +153,16 @@ function cdLeft(s) {
 const MAX_WAVE = 20;
 // Which special types are unlocked per wave threshold
 // healer: wave 1+, bomb: wave 6+, accelerator: wave 11+, blocker: wave 16+
-const SPECIAL_TYPES = ['healer', 'bomb', 'accelerator', 'blocker'];
-const SPECIAL_UNLOCK = [1, 6, 11, 16]; // min wave to appear
+// Shuffle special types at load so unlock order is random each run
+const SPECIAL_TYPES = (() => {
+  const arr = ['healer', 'bomb', 'accelerator', 'blocker'];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+})();
+const SPECIAL_UNLOCK = [1, 6, 11, 16]; // min wave to appear (paired by index with shuffled SPECIAL_TYPES)
 const SPECIAL_CHANCE = 0.18; // probability per spawn that it's a special
 
 // Blocked spells: { spellKey: timestamp when block expires }
