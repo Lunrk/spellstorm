@@ -78,7 +78,12 @@ window.addEventListener('resize', resizeCanvases);
 resizeCanvases();
 
 /* ── STATE ────────────────────────────────────────────────────── */
-const STATE = { TITLE: 'title', PLAYING: 'playing', GAMEOVER: 'gameover' };
+const STATE = {
+  TITLE: 'title',
+  PLAYING: 'playing',
+  PAUSED: 'paused',
+  GAMEOVER: 'gameover',
+};
 let gameState = STATE.TITLE;
 let hp = 100,
   score = 0,
@@ -1860,6 +1865,21 @@ function initSpeech() {
         const spellEntries = [];
         for (const [k, words] of Object.entries(LANG[currentLang].spells))
           for (const w of words) spellEntries.push({ k, w: norm(w) });
+        // Check pause/resume first
+        const pauseWords =
+          currentLang === 'fr' ? ['pause', 'reprendre'] : ['pause', 'resume'];
+        if (tx.includes(pauseWords[0]) && gameState === STATE.PLAYING) {
+          pauseGame();
+          return;
+        }
+        if (tx.includes(pauseWords[1]) && gameState === STATE.PAUSED) {
+          resumeGame();
+          return;
+        }
+        if (tx.includes('pause') && gameState === STATE.PAUSED) {
+          resumeGame();
+          return;
+        }
         spellEntries.sort((a, b) => b.w.length - a.w.length);
         for (const { k, w } of spellEntries) {
           if (tx.includes(w)) {
@@ -2097,8 +2117,8 @@ function restartGame() {
   setTimeout(startGame, 100);
 }
 function showScreen(name) {
-  ['screen-title', 'screen-rules', 'screen-gameover'].forEach((id) =>
-    document.getElementById(id).classList.add('hidden'),
+  ['screen-title', 'screen-rules', 'screen-gameover', 'screen-pause'].forEach(
+    (id) => document.getElementById(id).classList.add('hidden'),
   );
   if (name)
     document.getElementById('screen-' + name).classList.remove('hidden');
@@ -2107,6 +2127,33 @@ function showRules() {
   showScreen('rules');
 }
 function hideRules() {
+  showScreen('title');
+}
+
+function pauseGame() {
+  if (gameState !== STATE.PLAYING) return;
+  gameState = STATE.PAUSED;
+  cancelAnimationFrame(raf);
+  stopPoison();
+  document.getElementById('screen-pause').classList.remove('hidden');
+}
+function resumeGame() {
+  if (gameState !== STATE.PAUSED) return;
+  gameState = STATE.PLAYING;
+  document.getElementById('screen-pause').classList.add('hidden');
+  lastTime = performance.now();
+  raf = requestAnimationFrame(gameLoop);
+}
+function quitToMenu() {
+  gameState = STATE.TITLE;
+  cancelAnimationFrame(raf);
+  stopSpeech();
+  stopPoison();
+  stopMusic();
+  document.getElementById('screen-pause').classList.add('hidden');
+  ['hud', 'spellsBar', 'gestureBadge', 'waveBadge', 'hpWrap'].forEach((id) =>
+    document.getElementById(id).classList.add('hidden'),
+  );
   showScreen('title');
 }
 
@@ -2260,6 +2307,13 @@ function announceWave(silent) {
 })();
 showScreen('title');
 updateRulesText();
+// Escape key toggles pause
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (gameState === STATE.PLAYING) pauseGame();
+    else if (gameState === STATE.PAUSED) resumeGame();
+  }
+});
 document
   .querySelectorAll('.lang-btn')
   .forEach((b) =>
