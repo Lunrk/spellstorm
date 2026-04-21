@@ -282,6 +282,492 @@ function smoothGesture(raw) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   AUDIO ENGINE — Web Audio API synthesis
+   ═══════════════════════════════════════════════════════════════ */
+
+let _ac = null; // AudioContext — created on first user interaction
+let _masterGain = null;
+let _musicNodes = []; // refs for music loop cleanup
+let _musicPlaying = false;
+
+function getAC() {
+  if (!_ac) {
+    _ac = new (window.AudioContext || window.webkitAudioContext)();
+    _masterGain = _ac.createGain();
+    _masterGain.gain.value = 0.55;
+    _masterGain.connect(_ac.destination);
+  }
+  if (_ac.state === 'suspended') _ac.resume();
+  return _ac;
+}
+
+/* ── Helper: connect chain of nodes → masterGain ──────────────── */
+function chain(...nodes) {
+  for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
+  nodes[nodes.length - 1].connect(_masterGain);
+  return nodes[0];
+}
+
+/* ── White / pink noise buffer ────────────────────────────────── */
+function makeNoise(ac, dur, color = 'white') {
+  const sr = ac.sampleRate,
+    len = Math.ceil(sr * dur);
+  const buf = ac.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  let b0 = 0,
+    b1 = 0,
+    b2 = 0,
+    b3 = 0,
+    b4 = 0,
+    b5 = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    if (color === 'pink') {
+      b0 = 0.99886 * b0 + w * 0.0555179;
+      b1 = 0.99332 * b1 + w * 0.0750759;
+      b2 = 0.969 * b2 + w * 0.153852;
+      b3 = 0.8665 * b3 + w * 0.3104856;
+      b4 = 0.55 * b4 + w * 0.5329522;
+      b5 = -0.7616 * b5 - w * 0.016898;
+      d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.11;
+    } else {
+      d[i] = w;
+    }
+  }
+  return buf;
+}
+
+/* ── SPELL SOUNDS ──────────────────────────────────────────────── */
+
+function sndShield() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Resonant dome sweep — high shimmer + low thud
+  const osc1 = ac.createOscillator();
+  osc1.type = 'sine';
+  osc1.frequency.setValueAtTime(320, now);
+  osc1.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+  osc1.frequency.exponentialRampToValueAtTime(440, now + 0.35);
+  const osc2 = ac.createOscillator();
+  osc2.type = 'triangle';
+  osc2.frequency.setValueAtTime(80, now);
+  osc2.frequency.exponentialRampToValueAtTime(160, now + 0.15);
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.4, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.5, now);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  // Shimmer noise layer
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.3);
+  const nsf = ac.createBiquadFilter();
+  nsf.type = 'bandpass';
+  nsf.frequency.value = 4000;
+  nsf.Q.value = 2;
+  const nsg = ac.createGain();
+  nsg.gain.setValueAtTime(0.15, now);
+  nsg.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  chain(osc1, g1);
+  chain(osc2, g2);
+  chain(ns, nsf, nsg);
+  osc1.start(now);
+  osc1.stop(now + 0.4);
+  osc2.start(now);
+  osc2.stop(now + 0.3);
+  ns.start(now);
+  ns.stop(now + 0.3);
+}
+
+function sndFire() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Whoosh ignition — pitched noise + crackle
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.6, 'pink');
+  const f1 = ac.createBiquadFilter();
+  f1.type = 'bandpass';
+  f1.frequency.setValueAtTime(800, now);
+  f1.frequency.exponentialRampToValueAtTime(200, now + 0.5);
+  f1.Q.value = 1.5;
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.6, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+  // Crackle layer
+  const ns2 = ac.createBufferSource();
+  ns2.buffer = makeNoise(ac, 0.3);
+  const f2 = ac.createBiquadFilter();
+  f2.type = 'highpass';
+  f2.frequency.value = 3000;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.2, now);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  // Low roar
+  const osc = ac.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(55, now);
+  osc.frequency.exponentialRampToValueAtTime(30, now + 0.5);
+  const g3 = ac.createGain();
+  g3.gain.setValueAtTime(0.25, now);
+  g3.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+  chain(ns, f1, g1);
+  chain(ns2, f2, g2);
+  chain(osc, g3);
+  ns.start(now);
+  ns.stop(now + 0.6);
+  ns2.start(now);
+  ns2.stop(now + 0.3);
+  osc.start(now);
+  osc.stop(now + 0.5);
+}
+
+function sndLightning() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Sharp crack + electric buzz
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.05);
+  const f1 = ac.createBiquadFilter();
+  f1.type = 'highpass';
+  f1.frequency.value = 1000;
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(1.0, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+  // Electric buzz
+  const osc = ac.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(180, now);
+  osc.frequency.exponentialRampToValueAtTime(60, now + 0.3);
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.3, now);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+  // High zap
+  const osc2 = ac.createOscillator();
+  osc2.type = 'sawtooth';
+  osc2.frequency.setValueAtTime(1200, now);
+  osc2.frequency.exponentialRampToValueAtTime(200, now + 0.2);
+  const g3 = ac.createGain();
+  g3.gain.setValueAtTime(0.4, now);
+  g3.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  chain(ns, f1, g1);
+  chain(osc, g2);
+  chain(osc2, g3);
+  ns.start(now);
+  ns.stop(now + 0.05);
+  osc.start(now);
+  osc.stop(now + 0.35);
+  osc2.start(now);
+  osc2.stop(now + 0.2);
+}
+
+function sndPoison() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Bubbling / hissing toxic
+  const osc = ac.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(220, now);
+  osc.frequency.setValueAtTime(180, now + 0.1);
+  osc.frequency.setValueAtTime(260, now + 0.2);
+  osc.frequency.setValueAtTime(200, now + 0.3);
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.25, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.5, 'pink');
+  const f1 = ac.createBiquadFilter();
+  f1.type = 'bandpass';
+  f1.frequency.value = 600;
+  f1.Q.value = 3;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.3, now);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+  chain(osc, g1);
+  chain(ns, f1, g2);
+  osc.start(now);
+  osc.stop(now + 0.5);
+  ns.start(now);
+  ns.stop(now + 0.5);
+}
+
+function sndFreeze() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Ice nova — descending shimmer + glassy crack
+  for (let i = 0; i < 5; i++) {
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    const baseF = 800 + i * 300;
+    osc.frequency.setValueAtTime(baseF, now + i * 0.02);
+    osc.frequency.exponentialRampToValueAtTime(
+      baseF * 0.3,
+      now + 0.5 + i * 0.02,
+    );
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.12, now + i * 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.5 + i * 0.02);
+    chain(osc, g);
+    osc.start(now + i * 0.02);
+    osc.stop(now + 0.6 + i * 0.02);
+  }
+  // Ice crack noise burst
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.12);
+  const f1 = ac.createBiquadFilter();
+  f1.type = 'highpass';
+  f1.frequency.value = 5000;
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.3, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  chain(ns, f1, g1);
+  ns.start(now);
+  ns.stop(now + 0.12);
+}
+
+function sndHeal() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Warm rising chime
+  const freqs = [261, 329, 392, 523];
+  freqs.forEach((f, i) => {
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, now + i * 0.07);
+    g.gain.linearRampToValueAtTime(0.3, now + i * 0.07 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.07 + 0.4);
+    chain(osc, g);
+    osc.start(now + i * 0.07);
+    osc.stop(now + i * 0.07 + 0.4);
+  });
+}
+
+function sndProjectileDestroy() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  const osc = ac.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, now);
+  osc.frequency.exponentialRampToValueAtTime(100, now + 0.15);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.2, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  chain(osc, g);
+  osc.start(now);
+  osc.stop(now + 0.15);
+}
+
+function sndTargetDeath() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.2, 'pink');
+  const f1 = ac.createBiquadFilter();
+  f1.type = 'bandpass';
+  f1.frequency.value = 300;
+  f1.Q.value = 2;
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.4, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  chain(ns, f1, g1);
+  ns.start(now);
+  ns.stop(now + 0.2);
+}
+
+function sndDamage() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Harsh impact
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.1);
+  const f1 = ac.createBiquadFilter();
+  f1.type = 'lowpass';
+  f1.frequency.value = 400;
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.5, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  const osc = ac.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 60;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.4, now);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  chain(ns, f1, g1);
+  chain(osc, g2);
+  ns.start(now);
+  ns.stop(now + 0.1);
+  osc.start(now);
+  osc.stop(now + 0.2);
+}
+
+function sndComboUp() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Ascending sparkle
+  const freqs = [523, 659, 784, 1047];
+  freqs.forEach((f, i) => {
+    const osc = ac.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = f;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.2, now + i * 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.2);
+    chain(osc, g);
+    osc.start(now + i * 0.05);
+    osc.stop(now + i * 0.05 + 0.2);
+  });
+}
+
+function sndWave() {
+  const ac = getAC(),
+    now = ac.currentTime;
+  // Low dramatic boom
+  const osc = ac.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(80, now);
+  osc.frequency.exponentialRampToValueAtTime(30, now + 0.6);
+  const g1 = ac.createGain();
+  g1.gain.setValueAtTime(0.5, now);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+  const ns = ac.createBufferSource();
+  ns.buffer = makeNoise(ac, 0.3, 'pink');
+  const f1 = ac.createBiquadFilter();
+  f1.type = 'bandpass';
+  f1.frequency.value = 200;
+  const g2 = ac.createGain();
+  g2.gain.setValueAtTime(0.3, now);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  chain(osc, g1);
+  chain(ns, f1, g2);
+  osc.start(now);
+  osc.stop(now + 0.7);
+  ns.start(now);
+  ns.stop(now + 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AMBIENT MUSIC — dark neon loop
+   Built from layered drones + arpeggiated melody
+   ═══════════════════════════════════════════════════════════════ */
+
+function startMusic() {
+  if (_musicPlaying) return;
+  _musicPlaying = true;
+  const ac = getAC();
+  _musicNodes = [];
+
+  // Master music gain (lower than sfx)
+  const musicGain = ac.createGain();
+  musicGain.gain.value = 0.22;
+  musicGain.connect(_masterGain);
+  _musicNodes.push(musicGain);
+
+  // ── Low drone pad ──────────────────────────────────────────────
+  const droneFreqs = [55, 82.4, 110]; // A1, E2, A2
+  droneFreqs.forEach((f, i) => {
+    const osc = ac.createOscillator();
+    osc.type = i === 0 ? 'sine' : 'triangle';
+    osc.frequency.value = f;
+    // Slow vibrato
+    const lfo = ac.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.3 + i * 0.07;
+    const lfoGain = ac.createGain();
+    lfoGain.gain.value = 1.5;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    const g = ac.createGain();
+    g.gain.value = i === 0 ? 0.18 : 0.08;
+    osc.connect(g);
+    g.connect(musicGain);
+    osc.start();
+    lfo.start();
+    _musicNodes.push(osc, lfo, lfoGain, g);
+  });
+
+  // ── Mid shimmer pad ────────────────────────────────────────────
+  [220, 277.2, 329.6, 440].forEach((f, i) => {
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = f + (Math.random() - 0.5) * 2; // slight detune
+    const g = ac.createGain();
+    g.gain.value = 0.04;
+    // Slow tremolo
+    const lfo = ac.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.15 + i * 0.04;
+    const lfoG = ac.createGain();
+    lfoG.gain.value = 0.03;
+    lfo.connect(lfoG);
+    lfoG.connect(g.gain);
+    osc.connect(g);
+    g.connect(musicGain);
+    osc.start();
+    lfo.start();
+    _musicNodes.push(osc, lfo, lfoG, g);
+  });
+
+  // ── Arpeggio melody ────────────────────────────────────────────
+  // A minor pentatonic: A3 C4 D4 E4 G4 A4
+  const arpNotes = [
+    220, 261.6, 293.7, 329.6, 392, 440, 392, 329.6, 293.7, 261.6,
+  ];
+  const arpSpeed = 0.35; // seconds per note
+  let arpStep = 0;
+
+  function scheduleArp() {
+    if (!_musicPlaying) return;
+    const now = ac.currentTime;
+    const freq = arpNotes[arpStep % arpNotes.length];
+    arpStep++;
+
+    const osc = ac.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.06, now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, now + arpSpeed * 0.85);
+    osc.connect(g);
+    g.connect(musicGain);
+    osc.start(now);
+    osc.stop(now + arpSpeed);
+
+    setTimeout(scheduleArp, arpSpeed * 1000 * 0.98);
+  }
+  scheduleArp();
+
+  // ── Sub bass pulse ─────────────────────────────────────────────
+  function scheduleBass() {
+    if (!_musicPlaying) return;
+    const now = ac.currentTime;
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 55;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.22, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    osc.connect(g);
+    g.connect(musicGain);
+    osc.start(now);
+    osc.stop(now + 0.4);
+    setTimeout(scheduleBass, 800 + Math.random() * 400);
+  }
+  scheduleBass();
+}
+
+function stopMusic() {
+  _musicPlaying = false;
+  _musicNodes.forEach((n) => {
+    try {
+      n.stop ? n.stop() : n.disconnect();
+    } catch (e) {}
+  });
+  _musicNodes = [];
+}
+
+/* ═══════════════════════════════════════════════════════════════
    ENTITIES
    ═══════════════════════════════════════════════════════════════ */
 function spawnTarget() {
@@ -387,6 +873,7 @@ function updateTargets(dt) {
     if (tgt.hp <= 0) {
       spawnFX(tgt.x, tgt.y, '#a855f7', 14);
       tryDrop(tgt.x, tgt.y);
+      sndTargetDeath();
       addKill();
       targets.splice(i, 1);
     }
@@ -496,6 +983,7 @@ function castShield() {
       spawnFX(proj.x, proj.y, '#38bdf8', 8);
       projectiles.splice(i, 1);
       score += 10;
+      sndProjectileDestroy();
     }
   }
   spellFX.push({
@@ -509,6 +997,7 @@ function castShield() {
   });
   flash('🛡️ ' + t('shield'), '#38bdf8');
   markActive('shield');
+  sndShield();
 }
 function castFire() {
   if (!isReady('fire') || !indexTip) return;
@@ -533,6 +1022,7 @@ function castFire() {
       spawnFireParts(pos.x, pos.y);
       flash('🔥 ' + t('fire'), '#ff6b2b');
       markActive('fire');
+      sndFire();
       hit = true;
       break;
     }
@@ -575,6 +1065,7 @@ function castLightning() {
   });
   flash('⚡ ' + t('lightning'), '#ffe066');
   markActive('lightning');
+  sndLightning();
 }
 function castPoison() {
   if (!isReady('poison')) return;
@@ -585,6 +1076,7 @@ function castPoison() {
   _poisonTimeout = setTimeout(stopPoison, (4 + combo) * 1000);
   flash('☠️ ' + t('poison'), '#a855f7');
   markActive('poison');
+  sndPoison();
 }
 /* ── FREEZE ──────────────────────────────────────────────────── */
 function castFreeze() {
@@ -637,6 +1129,7 @@ function castFreeze() {
     '#a5f3fc',
   );
   markActive('freeze');
+  sndFreeze();
 }
 
 function castHeal() {
@@ -654,6 +1147,7 @@ function castHeal() {
       healed = true;
     }
   }
+  if (healed) sndHeal();
   flash(
     healed ? '💚 ' + t('heal') + ' +25' : '💚 ' + t('heal') + ' — no drops',
     '#4ade80',
@@ -809,6 +1303,7 @@ function updatePoisonTrail(dt) {
 function takeDamage(amount) {
   hp -= amount;
   breakCombo();
+  sndDamage();
   if (hp <= 0) {
     hp = 0;
     endGame();
@@ -1599,6 +2094,7 @@ function startGame() {
   gameState = STATE.PLAYING;
   if (!mpHands) initMediaPipe();
   startSpeech();
+  startMusic();
   lastTime = performance.now();
   raf = requestAnimationFrame(gameLoop);
   for (let i = 0; i < 3; i++) setTimeout(spawnTarget, i * 600);
@@ -1609,6 +2105,7 @@ function endGame() {
   cancelAnimationFrame(raf);
   stopSpeech();
   stopPoison();
+  stopMusic();
   ['hud', 'spellsBar', 'gestureBadge', 'waveBadge', 'hpWrap'].forEach((id) =>
     document.getElementById(id).classList.add('hidden'),
   );
@@ -1761,9 +2258,11 @@ function showComboUp() {
     '🔥 ×' + combo + ' COMBO!',
     combo >= 4 ? '#f97316' : combo >= 3 ? '#f59e0b' : '#38bdf8',
   );
+  sndComboUp();
 }
 function announceWave(silent) {
   if (silent) return;
+  sndWave();
   const el = document.getElementById('waveAnnounce');
   el.textContent = (t('wave') + ' ' + wave).toUpperCase();
   el.style.animation = 'none';
