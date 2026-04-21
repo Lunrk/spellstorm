@@ -1,32 +1,385 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MediaPipe Hand Visualizer</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <main class="app">
-    <h1>MediaPipe Hand Visualizer</h1>
-    <p class="subtitle">Start your webcam to see hand landmarks and connections.</p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SPELL STORM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <video id="video" playsinline></video>
+    <canvas id="gameCanvas"></canvas>
+    <canvas id="handCanvas"></canvas>
 
-    <section class="controls">
-      <button id="startBtn" type="button">Start camera</button>
-      <button id="stopBtn" type="button" disabled>Stop camera</button>
-      <span id="status" role="status">Idle</span>
-      <span id="gestureOutput" class="gesture-output">Gesture: NONE</span>
-    </section>
+    <!-- ══ TITLE ══ -->
+    <div id="screen-title" class="screen">
+      <div class="title-logo">
+        <span class="t-fire">SP</span><span class="t-lightning">E</span
+        ><span class="t-poison">LL</span>&nbsp;<span class="t-shield"
+          >STORM</span
+        >
+      </div>
+      <p class="title-sub">Cast spells with your hands &amp; voice</p>
 
-    <section class="viewer">
-      <video id="video" playsinline></video>
-      <canvas id="overlay"></canvas>
-    </section>
-  </main>
+      <div class="lang-picker">
+        <button
+          class="lang-btn selected"
+          data-lang="en"
+          onclick="selectLang('en')"
+        >
+          🇬🇧 English
+        </button>
+        <button class="lang-btn" data-lang="fr" onclick="selectLang('fr')">
+          🇫🇷 Français
+        </button>
+      </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-  <script src="main.js"></script>
-</body>
+      <div class="bg-picker">
+        <button
+          class="bg-btn selected"
+          data-bg="virtual"
+          onclick="selectBg('virtual')"
+        >
+          🖤 Virtual
+        </button>
+        <button class="bg-btn" data-bg="camera" onclick="selectBg('camera')">
+          📷 Camera
+        </button>
+      </div>
+
+      <button class="btn-primary" onclick="startGame()">START</button>
+      <button class="btn-rules" onclick="showRules()">How to play</button>
+    </div>
+
+    <!-- ══ RULES ══ -->
+    <div id="screen-rules" class="screen hidden">
+      <div class="rules-card">
+        <h2 id="rules-title">HOW TO PLAY</h2>
+        <div class="rules-grid">
+          <div class="rules-spell">
+            <div class="rules-spell-header">
+              <span class="rules-spell-icon">🛡️</span>
+              <span class="rules-spell-name c-shield" id="r-shield-name"
+                >SHIELD</span
+              >
+              <span class="rules-spell-cd">CD: 4s</span>
+            </div>
+            <p id="r-shield-desc">
+              Open hand + say "shield". Destroys projectiles near your palm.
+            </p>
+            <span class="voice-cmd" id="r-shield-cmd">"shield"</span>
+          </div>
+          <div class="rules-spell">
+            <div class="rules-spell-header">
+              <span class="rules-spell-icon">🔥</span>
+              <span class="rules-spell-name c-fire" id="r-fire-name">FIRE</span>
+              <span class="rules-spell-cd">CD: 3s</span>
+            </div>
+            <p id="r-fire-desc">
+              Point fingertip ON a target + say "fire". Ignites with magic
+              flame.
+            </p>
+            <span class="voice-cmd" id="r-fire-cmd">"fire"</span>
+          </div>
+          <div class="rules-spell">
+            <div class="rules-spell-header">
+              <span class="rules-spell-icon">⚡</span>
+              <span class="rules-spell-name c-lightning" id="r-lightning-name"
+                >LIGHTNING</span
+              >
+              <span class="rules-spell-cd">CD: 5s</span>
+            </div>
+            <p id="r-lightning-desc">
+              Point + say "lightning". Bounces off targets & walls. More bounces
+              with higher level.
+            </p>
+            <span class="voice-cmd" id="r-lightning-cmd">"lightning"</span>
+          </div>
+          <div class="rules-spell">
+            <div class="rules-spell-header">
+              <span class="rules-spell-icon">☠️</span>
+              <span class="rules-spell-name c-poison" id="r-poison-name"
+                >POISON</span
+              >
+              <span class="rules-spell-cd">CD: 6s</span>
+            </div>
+            <p id="r-poison-desc">
+              Say "poison" to activate. Toxic trail wherever your hand moves.
+              Costs HP. Recast or use another spell to stop.
+            </p>
+            <span class="voice-cmd" id="r-poison-cmd">"poison"</span>
+          </div>
+          <div class="rules-spell">
+            <div class="rules-spell-header">
+              <span class="rules-spell-icon">❄️</span>
+              <span class="rules-spell-name c-freeze" id="r-freeze-name"
+                >FREEZE</span
+              >
+              <span class="rules-spell-cd">CD: 8s</span>
+            </div>
+            <p id="r-freeze-desc">
+              Open hand + say "freeze". Freezes all nearby targets for 5s — they
+              stop moving and take +30% damage. Scales with level.
+            </p>
+            <span class="voice-cmd" id="r-freeze-cmd">"freeze"</span>
+          </div>
+        </div>
+        <div class="rules-misc">
+          <div>
+            <strong id="r-heal-title">💚 HEAL</strong><br /><span
+              id="r-heal-desc"
+              >Say "heal" to collect green drops from killed targets.</span
+            >
+          </div>
+          <div>
+            <strong id="r-level-title">🔥 LEVEL</strong><br /><span
+              id="r-level-desc"
+              >Level up after multiple kills. Higher level = stronger
+              spells.</span
+            >
+          </div>
+          <div>
+            <strong id="r-boss-title">☠️ BOSS</strong><br />
+            <span id="r-boss-desc"
+              >A boss appears every 5 waves. The next wave won't start until
+              it's dead. Killing it fully heals you and drops bonus loot.</span
+            >
+          </div>
+          <div>
+            <strong id="r-proj-title">🔴 PROJECTILES</strong><br /><span
+              id="r-proj-desc"
+              >Blue → orange → red. Shield when red, before they vanish.</span
+            >
+          </div>
+          <div>
+            <strong id="r-warning-title">⚠️ BROWSER</strong><br /><span
+              id="r-warning-desc"
+              >Voice requires Chrome or Edge. Allow camera & microphone.</span
+            >
+          </div>
+        </div>
+        <div style="text-align: center; margin-top: 22px">
+          <button class="btn-primary" onclick="hideRules()">GOT IT</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ GAME OVER ══ -->
+    <div id="screen-gameover" class="screen hidden">
+      <div class="go-card">
+        <div class="go-title" id="go-title">GAME OVER</div>
+        <div class="go-record-badge" id="go-record">✦ NEW RECORD ✦</div>
+        <div class="go-stats">
+          <div class="go-stat">
+            <span class="go-stat-label" id="go-l-score">Score</span
+            ><span class="go-stat-value" id="go-score">0</span>
+          </div>
+          <div class="go-stat">
+            <span class="go-stat-label" id="go-l-time">Time</span
+            ><span class="go-stat-value" id="go-time">0:00</span>
+          </div>
+          <div class="go-stat">
+            <span class="go-stat-label" id="go-l-kills">Kills</span
+            ><span class="go-stat-value" id="go-kills">0</span>
+          </div>
+          <div class="go-stat">
+            <span class="go-stat-label" id="go-l-level">Final level</span
+            ><span class="go-stat-value" id="go-level">×1</span>
+          </div>
+          <div class="go-stat">
+            <span class="go-stat-label" id="go-l-record">Best score</span
+            ><span class="go-stat-value" id="go-best">0</span>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="restartGame()" id="go-btn">
+          PLAY AGAIN
+        </button>
+      </div>
+    </div>
+
+    <!-- ══ HUD ══ -->
+    <div id="hud" class="hidden">
+      <!-- Score — top left -->
+      <div class="hud-score">
+        <span class="hud-score-label">SCORE</span>
+        <span id="hudScore">0</span>
+      </div>
+      <!-- Timer — top right (mic dot is also top-right but z-layered above) -->
+      <div class="hud-timer">
+        <span class="hud-timer-label">TIME</span>
+        <span id="hudTimer">0:00</span>
+      </div>
+      <!-- Level — below timer -->
+      <div class="hud-level">
+        <span class="hud-level-label">LEVEL</span>
+        <span class="level-value" id="levelVal">×1</span>
+      </div>
+    </div>
+
+    <!-- Gesture badge -->
+    <div class="gesture-badge hidden" id="gestureBadge">—</div>
+
+    <!-- Wave badge -->
+    <div class="wave-badge hidden" id="waveBadge">WAVE 1</div>
+
+    <!-- Voice flash -->
+    <div class="voice-flash" id="voiceFlash"></div>
+
+    <!-- Bottom HUD: spells + HP -->
+    <div class="bottom-hud hidden" id="spellsBar">
+      <div class="spells-bar">
+        <div class="spell-slot" data-spell="shield" id="slot-shield">
+          <div class="spell-icon">🛡️</div>
+          <div class="spell-name" id="sn-shield">SHIELD</div>
+          <div class="spell-cd-overlay done" id="cd-shield">4</div>
+        </div>
+        <div class="spell-slot" data-spell="fire" id="slot-fire">
+          <div class="spell-icon">🔥</div>
+          <div class="spell-name" id="sn-fire">FIRE</div>
+          <div class="spell-cd-overlay done" id="cd-fire">3</div>
+        </div>
+        <div class="spell-slot" data-spell="lightning" id="slot-lightning">
+          <div class="spell-icon">⚡</div>
+          <div class="spell-name" id="sn-lightning">LIGHTNING</div>
+          <div class="spell-cd-overlay done" id="cd-lightning">5</div>
+        </div>
+        <div class="spell-slot" data-spell="poison" id="slot-poison">
+          <div class="spell-icon">☠️</div>
+          <div class="spell-name" id="sn-poison">POISON</div>
+          <div class="spell-cd-overlay done" id="cd-poison">6</div>
+        </div>
+        <div class="spell-slot" data-spell="heal" id="slot-heal">
+          <div class="spell-icon">💚</div>
+          <div class="spell-name" id="sn-heal">HEAL</div>
+          <div class="spell-cd-overlay done" id="cd-heal">5</div>
+        </div>
+        <div class="spell-slot" data-spell="freeze" id="slot-freeze">
+          <div class="spell-icon">❄️</div>
+          <div class="spell-name" id="sn-freeze">FREEZE</div>
+          <div class="spell-cd-overlay done" id="cd-freeze">8</div>
+        </div>
+      </div>
+      <!-- HP bar (under spells) -->
+      <div class="hp-wrap" id="hpWrap">
+        <div class="hp-row">
+          <span class="hp-label">HP</span>
+          <span class="hp-number" id="hpNumber">100 / 100</span>
+        </div>
+        <div class="hp-bar-bg">
+          <div class="hp-bar-fill" id="hpBar" style="width: 100%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mic dot + status -->
+    <div class="mic-dot" id="micDot"></div>
+    <div id="micStatusBadge"></div>
+
+    <!-- ══ PAUSE ══ -->
+    <div
+      id="screen-pause"
+      class="screen hidden"
+      style="background: rgba(6, 8, 16, 0.85); backdrop-filter: blur(6px)"
+    >
+      <div class="go-card" style="gap: 18px">
+        <div class="go-title" style="font-size: 2rem">⏸ PAUSE</div>
+        <button class="btn-primary" onclick="resumeGame()" style="width: 220px">
+          ▶ RESUME
+        </button>
+        <button
+          class="btn-rules"
+          onclick="quitToMenu()"
+          style="width: 220px; margin-top: 4px"
+        >
+          🏠 MAIN MENU
+        </button>
+        <p
+          style="
+            color: rgba(255, 255, 255, 0.3);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.85rem;
+            margin-top: 8px;
+          "
+        >
+          Press
+          <kbd
+            style="
+              background: rgba(255, 255, 255, 0.1);
+              padding: 2px 6px;
+              border-radius: 4px;
+              color: #fff;
+            "
+            >Esc</kbd
+          >
+          &nbsp;or say <em>"resume"</em> / <em>"reprendre"</em>
+        </p>
+      </div>
+    </div>
+
+    <!-- ══ HAND LOST OVERLAY ══ -->
+    <div
+      id="hand-lost-overlay"
+      style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 8, 16, 0.92);
+        backdrop-filter: blur(4px);
+        z-index: 500;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+      "
+    >
+      <div
+        style="font-size: 3rem; animation: handPulse 1.2s ease-in-out infinite"
+      >
+        ✋
+      </div>
+      <div
+        style="
+          font-family: 'Orbitron', sans-serif;
+          font-size: 1.1rem;
+          color: #fff;
+          letter-spacing: 0.1em;
+        "
+        id="hand-lost-msg"
+      >
+        MAIN NON DÉTECTÉE
+      </div>
+      <div
+        style="
+          font-family: 'Rajdhani', sans-serif;
+          font-size: 0.85rem;
+          color: rgba(255, 255, 255, 0.4);
+        "
+      >
+        Replacez votre main devant la caméra
+      </div>
+    </div>
+
+    <!-- Wave announce -->
+    <div class="wave-announce" id="waveAnnounce"></div>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"
+      crossorigin="anonymous"
+    ></script>
+    <script src="main.js"></script>
+  </body>
 </html>
