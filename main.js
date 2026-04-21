@@ -754,7 +754,12 @@ function spawnTarget() {
       specialType = available[Math.floor(Math.random() * available.length)];
   }
   const r = specialType ? 32 : 28 + Math.random() * 16;
-  const hp = specialType ? Math.round((20 + wave * 15) * 1.3) : 20 + wave * 15;
+  const hp =
+    specialType === 'healer'
+      ? Math.round((20 + wave * 15) * 2)
+      : specialType
+        ? Math.round((20 + wave * 15) * 1.3)
+        : 20 + wave * 15;
   const spd =
     (specialType === 'accelerator' ? 1.2 : 1) *
     (0.6 + wave * 0.15) *
@@ -911,16 +916,22 @@ function updateTargets(dt) {
       tgt.healTimer -= dt;
       if (tgt.healTimer <= 0) {
         tgt.healTimer = 3;
-        // Heal nearby non-special targets
+        // Heal ALL targets on the map (no distance filter)
         for (const other of targets) {
-          if (
-            other !== tgt &&
-            !other.isBoss &&
-            !other.specialType &&
-            Math.hypot(other.x - tgt.x, other.y - tgt.y) < 400
-          ) {
-            other.hp = Math.min(other.maxHp, other.hp + other.maxHp * 0.15);
-            spawnFX(other.x, other.y, '#4ade80', 5);
+          if (other !== tgt && !other.isBoss) {
+            const healAmt = Math.round(other.maxHp * 0.15);
+            const actual = Math.min(healAmt, other.maxHp - other.hp);
+            if (actual > 0) {
+              other.hp += actual;
+              spawnFX(other.x, other.y, '#4ade80', 5);
+              spawnDmg(
+                other.x,
+                other.y - other.r - 10,
+                actual,
+                '#4ade80',
+                true,
+              );
+            }
           }
         }
       }
@@ -1382,16 +1393,16 @@ function spawnFX(x, y, color, n) {
   }
 }
 // Spawn a floating damage number at (x,y)
-function spawnDmg(x, y, amount, color) {
+function spawnDmg(x, y, amount, color, isHeal = false) {
   dmgNumbers.push({
     x: x + (Math.random() - 0.5) * 20,
     y: y,
-    vy: -(1.2 + Math.random() * 0.8), // float upward
-    text: '-' + Math.round(amount),
+    vy: -(1.2 + Math.random() * 0.8),
+    text: (isHeal ? '+' : '-') + Math.round(amount),
     color,
     life: 1.0,
     maxLife: 1.0,
-    size: Math.min(22, 12 + Math.round(amount / 8)), // bigger = more damage
+    size: Math.min(22, 12 + Math.round(amount / 8)),
   });
 }
 
@@ -1463,8 +1474,13 @@ function takeDamage(amount) {
   if (bossActive) {
     const boss = targets.find((t) => t.isBoss);
     if (boss) {
-      boss.hp = Math.min(boss.maxHp, boss.hp + 20 * wave);
-      spawnFX(boss.x, boss.y, '#f97316', 3);
+      const bHeal = 20 * wave;
+      const actual = Math.min(bHeal, boss.maxHp - boss.hp);
+      if (actual > 0) {
+        boss.hp += actual;
+        spawnFX(boss.x, boss.y, '#f97316', 3);
+        spawnDmg(boss.x, boss.y - boss.r - 10, actual, '#f97316', true); // orange +X
+      }
     }
   }
   if (hp <= 0) {
