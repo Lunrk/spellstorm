@@ -814,8 +814,21 @@ function updateTargets(dt) {
       }
     }
     if (tgt.hp <= 0) {
-      spawnFX(tgt.x, tgt.y, '#a855f7', 14);
-      tryDrop(tgt.x, tgt.y);
+      if (tgt.isBoss) {
+        // Epic death explosion
+        for (let _i = 0; _i < 5; _i++)
+          spawnFX(
+            tgt.x + (Math.random() - 0.5) * tgt.r,
+            tgt.y + (Math.random() - 0.5) * tgt.r,
+            '#f97316',
+            20,
+          );
+        spawnFX(tgt.x, tgt.y, '#ffe066', 30);
+        onBossDeath();
+      } else {
+        spawnFX(tgt.x, tgt.y, '#a855f7', 14);
+        tryDrop(tgt.x, tgt.y);
+      }
       sndTargetDeath();
       addKill();
       targets.splice(i, 1);
@@ -876,7 +889,11 @@ function updateProjectiles(dt) {
     p.life -= dt;
     if (p.life <= 0) {
       if (p.age / p.maxLife >= 0.4)
-        takeDamage(Math.min(15, (5 + wave * 1.5) | 0));
+        takeDamage(
+          p.isBossProj
+            ? Math.min(25, (8 + wave * 2) | 0)
+            : Math.min(15, (5 + wave * 1.5) | 0),
+        );
       spawnFX(p.x, p.y, '#f87171', 6);
       projectiles.splice(i, 1);
       continue;
@@ -1285,25 +1302,147 @@ let tSpawnTimer = 0,
   pSpawnTimer = 0,
   tSpawnInt = 6,
   pInt = BASE_PROJ_INT;
+
+/* ── BOSS ─────────────────────────────────────────────────────── */
+let bossActive = false,
+  bossSpawnPending = false;
+let bossShootTimer = 0;
+const BOSS_WAVE = 5; // boss every 5 waves
+
+function isBossWave(w) {
+  return w > 0 && w % BOSS_WAVE === 0;
+}
+
+function spawnBoss() {
+  const W = gameCanvas.width,
+    H = gameCanvas.height;
+  const r = 55 + wave * 2; // big boi
+  const hp = 200 + wave * 80;
+  const spd = (0.5 + wave * 0.08) * (0.9 + Math.random() * 0.2);
+  // Spawn from top center for dramatic entrance
+  const x = W / 2 + (Math.random() - 0.5) * 100,
+    y = -r;
+  const cx = W / 2,
+    cy = H / 2;
+  const dir = Math.atan2(cy - y, cx - x);
+  targets.push({
+    x,
+    y,
+    r,
+    hp,
+    maxHp: hp,
+    speed: spd,
+    vx: Math.cos(dir) * spd,
+    vy: Math.sin(dir) * spd,
+    wanderAngle: 0,
+    wanderTimer: 0,
+    burning: false,
+    burnTimer: 0,
+    burnDps: 0,
+    poisoned: false,
+    poisonTimer: 0,
+    frozen: false,
+    freezeTimer: 0,
+    freezeDmgBonus: 0,
+    isBoss: true,
+  });
+  bossActive = true;
+  bossSpawnPending = false;
+  bossShootTimer = 2; // first shot after 2s
+  // Dramatic announcement
+  announceBoss();
+}
+
+function announceBoss() {
+  const el = document.getElementById('waveAnnounce');
+  el.textContent = '⚠ BOSS ⚠';
+  el.style.color = '#f97316';
+  el.style.animation = 'none';
+  el.offsetHeight;
+  el.style.animation = 'waveIn 3s ease forwards';
+  sndWave();
+}
+
+function onBossDeath() {
+  bossActive = false;
+  // Full heal on boss kill
+  hp = 100;
+  // Big score bonus
+  score += Math.floor(500 * wave);
+  flash('💀 BOSS VAINCU ! +' + Math.floor(500 * wave), '#f97316');
+  // Spawn a bunch of drops
+  for (let i = 0; i < 5; i++)
+    drops.push({
+      x: gameCanvas.width / 2 + (Math.random() - 0.5) * 200,
+      y: gameCanvas.height / 2 + (Math.random() - 0.5) * 200,
+      r: 10,
+      life: 12,
+      maxLife: 12,
+      collected: false,
+    });
+  sndLevelUp();
+}
 function updateWave(dt) {
-  waveTimer += dt;
-  if (waveTimer >= 45) {
-    waveTimer = 0;
-    wave++;
-    announceWave();
-    tSpawnInt = Math.max(2, 6 - wave * 0.4);
-    pInt = Math.max(1, BASE_PROJ_INT - wave * 0.15);
-    document.getElementById('waveBadge').textContent = t('wave') + ' ' + wave;
+  // Freeze wave timer while boss is alive
+  if (!bossActive) {
+    waveTimer += dt;
+    if (waveTimer >= 45) {
+      waveTimer = 0;
+      wave++;
+      tSpawnInt = Math.max(2, 6 - wave * 0.4);
+      pInt = Math.max(1, BASE_PROJ_INT - wave * 0.15);
+      document.getElementById('waveBadge').textContent = t('wave') + ' ' + wave;
+      if (isBossWave(wave)) {
+        // Boss wave: clear all regular targets and spawn boss
+        targets.length = 0;
+        projectiles.length = 0;
+        bossSpawnPending = true;
+        setTimeout(spawnBoss, 1500); // slight delay for drama
+        announceWave(); // shows WAVE X first, then boss announcement
+        return;
+      }
+      announceWave();
+    }
   }
-  tSpawnTimer -= dt;
-  if (tSpawnTimer <= 0) {
-    tSpawnTimer = tSpawnInt;
-    if (targets.length < 3 + wave) spawnTarget();
+  // Regular target spawning — suppressed during boss wave
+  if (!bossActive) {
+    tSpawnTimer -= dt;
+    if (tSpawnTimer <= 0) {
+      tSpawnTimer = tSpawnInt;
+      if (targets.length < 3 + wave) spawnTarget();
+    }
   }
+  // Projectiles always spawn (boss also fires extra)
   pSpawnTimer -= dt;
   if (pSpawnTimer <= 0) {
     pSpawnTimer = Math.max(0.8, pInt / Math.max(1, targets.length * 0.4));
     spawnProjectile();
+  }
+  // Boss shoots extra projectiles
+  if (bossActive) {
+    bossShootTimer -= dt;
+    if (bossShootTimer <= 0) {
+      bossShootTimer = Math.max(0.8, 2.5 - wave * 0.08);
+      // Fire 3 projectiles in spread from boss position
+      const boss = targets.find((t) => t.isBoss);
+      if (boss) {
+        for (let i = -1; i <= 1; i++) {
+          const angle = Math.PI / 2 + i * (Math.PI / 8); // downward spread
+          const spd = 2 + wave * 0.15;
+          projectiles.push({
+            x: boss.x,
+            y: boss.y,
+            r: 10,
+            vx: Math.cos(angle) * spd,
+            vy: Math.sin(angle) * spd,
+            life: 8,
+            maxLife: 8,
+            age: 0,
+            isBossProj: true,
+          });
+        }
+      }
+    }
   }
 }
 
@@ -1342,7 +1481,13 @@ function drawBg() {
 }
 function drawTargets() {
   for (const tgt of targets) {
-    const ratio = tgt.hp / tgt.maxHp,
+    const ratio = tgt.hp / tgt.maxHp;
+    // Boss gets special colors — pulsing red/gold
+    let col;
+    if (tgt.isBoss) {
+      const pulse = 0.5 + Math.sin(Date.now() / 200) * 0.5;
+      col = `rgb(255,${Math.round(80 + pulse * 60)},0)`;
+    } else {
       col = tgt.frozen
         ? '#7dd3fc'
         : tgt.burning
@@ -1350,58 +1495,99 @@ function drawTargets() {
           : tgt.poisoned
             ? '#a855f7'
             : '#e879f9';
+    }
     gCtx.save();
-    gCtx.shadowBlur = 16;
+    gCtx.shadowBlur = tgt.isBoss ? 40 : 16;
     gCtx.shadowColor = col;
     gCtx.beginPath();
     gCtx.arc(tgt.x, tgt.y, tgt.r, 0, Math.PI * 2);
-    gCtx.fillStyle = `rgba(${tgt.frozen ? '125,211,252' : tgt.burning ? '255,107,43' : tgt.poisoned ? '168,85,247' : '232,121,249'},0.15)`;
-    gCtx.fill();
-    gCtx.strokeStyle = col;
-    gCtx.lineWidth = 1.5;
-    gCtx.stroke();
+    if (tgt.isBoss) {
+      // Boss: pulsing fill + double ring
+      const pulse = 0.5 + Math.sin(Date.now() / 200) * 0.5;
+      gCtx.fillStyle = `rgba(255,${Math.round(60 + pulse * 40)},0,0.2)`;
+      gCtx.fill();
+      gCtx.strokeStyle = col;
+      gCtx.lineWidth = 3;
+      gCtx.stroke();
+      // Outer ring
+      gCtx.beginPath();
+      gCtx.arc(tgt.x, tgt.y, tgt.r + 6 + pulse * 4, 0, Math.PI * 2);
+      gCtx.strokeStyle = `rgba(255,200,0,${0.3 + pulse * 0.3})`;
+      gCtx.lineWidth = 1.5;
+      gCtx.stroke();
+      // ☠ skull icon
+      gCtx.globalAlpha = 0.9;
+      gCtx.shadowBlur = 0;
+      gCtx.font = `bold ${Math.round(tgt.r * 0.7)}px serif`;
+      gCtx.textAlign = 'center';
+      gCtx.textBaseline = 'middle';
+      gCtx.fillStyle = '#fff';
+      gCtx.fillText('☠', tgt.x, tgt.y);
+    } else {
+      gCtx.fillStyle = `rgba(${tgt.frozen ? '125,211,252' : tgt.burning ? '255,107,43' : tgt.poisoned ? '168,85,247' : '232,121,249'},0.15)`;
+      gCtx.fill();
+      gCtx.strokeStyle = col;
+      gCtx.lineWidth = 1.5;
+      gCtx.stroke();
+    }
     gCtx.restore();
-    const bx = tgt.x - tgt.r,
-      by = tgt.y - tgt.r - 10,
-      bw = tgt.r * 2;
+    // HP bar — wider for boss
+    const bw = tgt.r * 2,
+      bx = tgt.x - tgt.r,
+      by = tgt.y - tgt.r - (tgt.isBoss ? 18 : 10);
     gCtx.fillStyle = 'rgba(0,0,0,0.5)';
     gCtx.beginPath();
-    gCtx.roundRect(bx, by, bw, 4, 2);
+    gCtx.roundRect(bx, by, bw, tgt.isBoss ? 6 : 4, 2);
     gCtx.fill();
     gCtx.fillStyle =
       ratio > 0.5 ? '#4ade80' : ratio > 0.25 ? '#facc15' : '#f87171';
     gCtx.beginPath();
-    gCtx.roundRect(bx, by, bw * ratio, 4, 2);
+    gCtx.roundRect(bx, by, bw * ratio, tgt.isBoss ? 6 : 4, 2);
     gCtx.fill();
-    gCtx.lineWidth = 1;
-    gCtx.globalAlpha = 0.55;
-    gCtx.beginPath();
-    if (tgt.frozen) {
-      for (let _a = 0; _a < 6; _a++) {
-        const _ang = (_a * Math.PI) / 3;
-        gCtx.moveTo(tgt.x, tgt.y);
-        gCtx.lineTo(
-          tgt.x + Math.cos(_ang) * tgt.r * 0.52,
-          tgt.y + Math.sin(_ang) * tgt.r * 0.52,
-        );
-      }
-    } else {
-      gCtx.moveTo(tgt.x - tgt.r * 0.4, tgt.y);
-      gCtx.lineTo(tgt.x + tgt.r * 0.4, tgt.y);
-      gCtx.moveTo(tgt.x, tgt.y - tgt.r * 0.4);
-      gCtx.lineTo(tgt.x, tgt.y + tgt.r * 0.4);
+    if (tgt.isBoss) {
+      // BOSS label above HP bar
+      gCtx.font = 'bold 11px Orbitron,sans-serif';
+      gCtx.textAlign = 'center';
+      gCtx.textBaseline = 'bottom';
+      gCtx.fillStyle = '#f97316';
+      gCtx.shadowBlur = 8;
+      gCtx.shadowColor = '#f97316';
+      gCtx.fillText('BOSS', tgt.x, by - 2);
+      gCtx.shadowBlur = 0;
     }
-    gCtx.strokeStyle = col;
-    gCtx.stroke();
-    gCtx.globalAlpha = 1;
+    if (!tgt.isBoss) {
+      gCtx.lineWidth = 1;
+      gCtx.globalAlpha = 0.55;
+      gCtx.beginPath();
+      if (tgt.frozen) {
+        for (let _a = 0; _a < 6; _a++) {
+          const _ang = (_a * Math.PI) / 3;
+          gCtx.moveTo(tgt.x, tgt.y);
+          gCtx.lineTo(
+            tgt.x + Math.cos(_ang) * tgt.r * 0.52,
+            tgt.y + Math.sin(_ang) * tgt.r * 0.52,
+          );
+        }
+      } else {
+        gCtx.moveTo(tgt.x - tgt.r * 0.4, tgt.y);
+        gCtx.lineTo(tgt.x + tgt.r * 0.4, tgt.y);
+        gCtx.moveTo(tgt.x, tgt.y - tgt.r * 0.4);
+        gCtx.lineTo(tgt.x, tgt.y + tgt.r * 0.4);
+      }
+      gCtx.strokeStyle = col;
+      gCtx.stroke();
+      gCtx.globalAlpha = 1;
+    }
   }
 }
 function drawProjectiles() {
   for (const p of projectiles) {
-    const col = projColor(p),
-      pulse = 0.7 + Math.sin(p.age * 6) * 0.3;
+    const col = p.isBossProj
+      ? `rgb(255,${Math.round(80 + Math.sin(p.age * 8) * 40)},0)`
+      : projColor(p);
+    const pulse = 0.7 + Math.sin(p.age * 6) * 0.3;
     gCtx.save();
-    gCtx.shadowBlur = 14 * pulse;
+    gCtx.shadowBlur = (p.isBossProj ? 28 : 14) * pulse;
     gCtx.shadowColor = col;
     gCtx.beginPath();
     gCtx.arc(p.x, p.y, p.r * pulse, 0, Math.PI * 2);
@@ -2070,6 +2256,9 @@ function startGame() {
   waveTimer = 0;
   level = 1;
   levelKills = 0;
+  bossActive = false;
+  bossSpawnPending = false;
+  bossShootTimer = 0;
   targets = [];
   projectiles = [];
   drops = [];
@@ -2226,6 +2415,10 @@ function updateRulesText() {
     'r-level-desc': en
       ? 'Kill enemies to level up. Each level-up fully heals you and powers up your spells.'
       : 'Tuez des ennemis pour monter de niveau. Chaque montée vous soigne à fond et renforce vos sorts.',
+    'r-boss-title': en ? '☠️ BOSS' : '☠️ BOSS',
+    'r-boss-desc': en
+      ? "A boss appears every 5 waves. The next wave won't start until it's dead. Killing it fully heals you and drops bonus loot."
+      : "Un boss apparaît toutes les 5 vagues. La vague suivante ne commence pas tant qu'il est vivant. Le tuer vous soigne à fond et fait tomber du butin bonus.",
     'r-proj-desc': en
       ? 'Blue → orange → red. Shield when red, before they vanish.'
       : 'Bleu → orange → rouge. Bouclier quand rouge.',
